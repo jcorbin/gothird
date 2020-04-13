@@ -277,12 +277,7 @@ func Test_VM(t *testing.T) {
 		vmCodePushint, 1, vmCodeSet,
 		vmCodeRead,
 		104,
-	).expectMemAt(115,
-		100,
-		15,
-		vmCodeRun,
-		104,
-	).expectDump(lines(
+	).expectMemAt(115, 100, 15, vmCodeRun, 104).expectDump(lines(
 		`prog: 36`,
 		`dict: [113 107 101 95 90 84 78 72 66 60 54 48 43 38 32]`,
 		`stack: []`,

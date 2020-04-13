@@ -140,31 +140,38 @@ func (vm *VM) key() bool {
 //         a pointer to that word's code pointer onto the current end of the
 //         dictionary
 func (vm *VM) read() bool {
-	token := vm.scan()
-	if addr := vm.lookupToken(token); addr != 0 {
-		vm.logf("read %v -> @%v", token, addr)
-		if vm.compiling {
-			// no compile time stack -> call it now
-			defer func(prog uint) { vm.prog = prog }(vm.prog)
-			vm.prog = addr
-			vm.exec()
-		} else if r := uint(vm.load(1)); r != 0 {
-			// call in next exec() round
-			vm.stor(1, int(vm.pushProg(r, addr)))
-			return false
-		} else {
-			// no return stack yet -> call it now
-			defer func(prog uint) { vm.prog = prog }(vm.prog)
-			vm.prog = addr
-			vm.exec()
-		}
-	} else if val, err := vm.parseToken(token); err != nil {
-		vm.halt(err)
-	} else {
-		vm.logf("pushint %v -> %v", token, val)
-		vm.compile(vmCodePushint)
-		vm.compile(int(val))
+	// we're running compilation words if compiling, or we have no return stack
+	compiling := vm.compiling
+	var r uint
+	if !compiling {
+		r = uint(vm.load(1))
+		compiling = r == 0
 	}
+
+	token := vm.scan()
+	if word := vm.lookupToken(token); word != 0 {
+		addr := word + 2
+		vm.logf("read %v @%v", token, addr)
+
+		// call it now, using Go's stack
+		if compiling {
+			defer func(prog uint) { vm.prog = prog }(vm.prog)
+			vm.prog = addr
+			vm.exec()
+			return false
+		}
+
+		// call in next exec() round
+		vm.stor(1, int(vm.pushProg(r, addr)))
+		return false
+	}
+
+	val, err := vm.parseToken(token)
+	vm.haltif(err)
+	vm.logf("read pushint %v", val)
+	vm.compile(vmCodePushint)
+	vm.compile(int(val))
+
 	return false
 }
 
@@ -178,8 +185,8 @@ func (vm *VM) parseToken(token string) (int, error) {
 
 func (vm *VM) lookupToken(token string) uint {
 	if name := vm.symbol(token); name != 0 {
-		if addr := vm.lookup(name); addr != 0 {
-			return addr
+		if word := vm.lookup(name); word != 0 {
+			return word
 		}
 	}
 	return 0

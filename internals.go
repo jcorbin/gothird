@@ -121,52 +121,67 @@ func (vm *VM) compileHeader(name uint) {
 }
 
 func (vm *VM) lookup(name uint) (addr uint) {
-	for addr := vm.last; addr != 0; {
-		if sym := uint(vm.load(addr + 1)); sym == name {
-			return addr + 2
+	for word := vm.last; word != 0; {
+		if sym := uint(vm.load(word + 1)); sym == name {
+			return word
 		}
-		addr = uint(vm.load(addr))
+		word = uint(vm.load(word))
 	}
 	return 0
 }
 
 func (vm *VM) exec() {
+	if vm.logfn != nil {
+		defer vm.withLogPrefix("	")()
+	}
+
 	if vm.compiling {
 		goto compileit
 	}
 
 runit:
 	for {
+		at := vm.prog
 		if code := vm.loadProg(); code == vmCodeCompile {
-			vm.logf("exec -> compileit")
+			vm.logf("runit @%v -> compileit", at)
 			vm.compiling = true
 			goto compileit
 		} else if code < len(vmCodeTable) {
-			vm.logf("step @%v %v -- %v", vm.prog-1, vmCodeNames[code], vm.stack)
+			vm.logf("runit @%v %v -- %v", at, vmCodeNames[code], vm.stack)
 			if done := vmCodeTable[code](vm); done {
 				return
 			}
 		} else {
+			vm.logf("runit @%v call %v", at, code)
 			vm.call(uint(code))
 		}
 	}
 
+	// FIXME this should just be implemented by compileme
 compileit:
 	for {
-		vm.logf("compileit @%v", vm.prog)
+		at := vm.prog
 		switch code := vm.loadProg(); code {
-		case vmCodeRun:
-			vm.logf("exec done (compiled call)")
-			vm.compile(int(vm.prog))
-			return
-		case vmCodeExit:
-			vm.logf("exec -> runit (exit)")
+		case vmCodeCompile:
+
+		case vmCodeDefine, vmCodeImmediate, vmCodeExit:
 			vm.compiling = false
+			vm.prog--
+			vm.logf("compileit @%v -> runit (%v)", at, vmCodeNames[code])
 			goto runit
+
+		case vmCodeRun:
+			vm.compile(int(vm.prog))
+			vm.logf("compileit @%v done (compiled call to %v)", at, vm.prog)
+			return
+
 		case vmCodePushint:
+			val := vm.loadProg()
 			vm.compile(code)
-			vm.compile(vm.loadProg())
+			vm.compile(val)
+			vm.logf("compileit @%v pushint %v", at, val)
 		default:
+			vm.logf("compileit @%v %v", at, vmCodeNames[code])
 			vm.compile(code)
 		}
 	}
