@@ -34,11 +34,9 @@ func (vm *VM) Run(ctx context.Context) error {
 	}
 }
 
-func WithInput(r io.Reader) VMOption   { return withInput(r) }
-func WithOutput(w io.Writer) VMOption  { return withOutput(w) }
-func WithTee(w io.Writer) VMOption     { return withTee(w) }
-func WithMemorySize(size int) VMOption { return withMemorySize(size) }
-func WithRetBase(base int) VMOption    { return withRetBase(base) }
-func WithMemBase(base int) VMOption    { return withMemBase(base) }
+func WithInput(r io.Reader) VMOption  { return withInput(r) }
+func WithOutput(w io.Writer) VMOption { return withOutput(w) }
+func WithTee(w io.Writer) VMOption    { return withTee(w) }
+func WithMemLimit(limit int) VMOption { return withMemLimit(limit) }
 
 func WithLogf(logfn func(mess string, args ...interface{})) VMOption { return withLogfn(logfn) }

@@ -30,20 +30,49 @@ func (vm *VM) haltif(err error) {
 	}
 }
 
-func (vm *VM) load(addr uint) int {
-	if addr >= uint(len(vm.mem)) {
-		vm.halt(loadError(addr))
+func (vm *VM) grow(size int) {
+	const chunkSize = 256
+	size = (size + chunkSize - 1) / chunkSize * chunkSize
+	if need := size - len(vm.mem); need > 0 {
+		if maxSize := vm.memLimit; maxSize != 0 && size > maxSize {
+			vm.halt(errOOM)
+		}
+		vm.mem = append(vm.mem, make([]int, need)...)
 	}
-	vm.logf("load %v <- @%v", vm.mem[addr], addr)
+}
+
+func (vm *VM) load(addr uint) int {
+	if maxSize := vm.memLimit; maxSize != 0 && int(addr) > maxSize {
+		vm.halt(errOOM)
+	} else if addr >= uint(len(vm.mem)) {
+		return 0
+	}
+	// vm.logf("load %v <- @%v", vm.mem[addr], addr)
 	return vm.mem[addr]
 }
 
 func (vm *VM) stor(addr uint, val int) {
 	if addr >= uint(len(vm.mem)) {
-		vm.halt(storError(addr))
+		vm.grow(int(addr) + 1)
 	}
 	vm.mem[addr] = val
-	vm.logf("stor %v -> @%v", val, addr)
+	// vm.logf("stor %v -> @%v", val, addr)
+}
+
+func (vm *VM) loadProg() int {
+	if memBase := uint(vm.load(11)); vm.prog < memBase {
+		vm.halt(progError(vm.prog))
+	}
+	val := vm.load(vm.prog)
+	vm.prog++
+	return val
+}
+
+func (vm *VM) pushProg(r, addr uint) uint {
+	vm.stor(r, int(vm.prog))
+	vm.logf("prog <- %v (call from %v)", addr, vm.prog)
+	vm.prog = addr
+	return r + 1
 }
 
 func (vm *VM) push(val int) {
@@ -56,33 +85,39 @@ func (vm *VM) pop() (val int) {
 	return val
 }
 
-func (vm *VM) loadProg() int {
-	if vm.prog < vm.memBase {
-		vm.halt(progError(vm.prog))
+func (vm *VM) here() uint {
+	h := uint(vm.load(0))
+	if h == 0 {
+		const defaultMemBase = 32
+		if len(vm.mem) < 12 {
+			vm.grow(defaultMemBase)
+		}
+		memBase := uint(vm.load(11))
+		if memBase == 0 {
+			memBase = defaultMemBase
+			vm.stor(11, int(memBase))
+		}
+		h = memBase
+		vm.stor(0, int(h))
 	}
-	val := vm.load(vm.prog)
-	vm.prog++
-	return val
+	return h
 }
 
 func (vm *VM) compile(val int) {
-	addr := uint(vm.load(0))
-	end := addr + 1
-	if end >= uint(len(vm.mem)) {
-		vm.halt(errOOM)
-	}
+	h := vm.here()
+	end := h + 1
 	vm.stor(0, int(end))
-	vm.stor(addr, val)
+	vm.stor(h, val)
 }
 
 func (vm *VM) compileHeader(name uint) {
-	addr := uint(vm.load(0))
+	h := vm.here()
 	prev := vm.last
 	vm.compile(int(prev))
 	vm.compile(int(name))
 	vm.compile(vmCodeCompile) // compile time code
 	vm.compile(vmCodeRun)     // run time code
-	vm.last = addr
+	vm.last = h
 }
 
 func (vm *VM) lookup(name uint) (addr uint) {
@@ -95,27 +130,55 @@ func (vm *VM) lookup(name uint) (addr uint) {
 	return 0
 }
 
-func (vm *VM) step() {
-	// TODO unsafe direct threading rather than token threading
+func (vm *VM) exec() {
+	if vm.compiling {
+		goto compileit
+	}
+
+runit:
 	for {
-		if code := vm.loadProg(); code < len(vmCodeTable) {
+		if code := vm.loadProg(); code == vmCodeCompile {
+			vm.logf("exec -> compileit")
+			vm.compiling = true
+			goto compileit
+		} else if code < len(vmCodeTable) {
 			vm.logf("step @%v %v -- %v", vm.prog-1, vmCodeNames[code], vm.stack)
-			vmCodeTable[code](vm)
+			if done := vmCodeTable[code](vm); done {
+				return
+			}
 		} else {
-			addr := uint(code)
-			vm.logf("step @%v call %v -- %v", vm.prog-1, addr, vm.stack)
-			vm.call(addr)
+			vm.call(uint(code))
+		}
+	}
+
+compileit:
+	for {
+		vm.logf("compileit @%v", vm.prog)
+		switch code := vm.loadProg(); code {
+		case vmCodeRun:
+			vm.logf("exec done (compiled call)")
+			vm.compile(int(vm.prog))
+			return
+		case vmCodeExit:
+			vm.logf("exec -> runit (exit)")
+			vm.compiling = false
+			goto runit
+		case vmCodePushint:
+			vm.compile(code)
+			vm.compile(vm.loadProg())
+		default:
+			vm.compile(code)
 		}
 	}
 }
 
 func (vm *VM) run() {
-	vm.stor(0, int(vm.memBase))
-	vm.stor(1, int(vm.retBase))
+	entry := vm.compileEntry()
 	vm.compileBuiltins()
-	vm.compileMain()
-	vm.logf("run main")
-	vm.step()
+
+	vm.compiling = false
+	vm.prog = entry
+	vm.exec()
 }
 
 var (
@@ -125,12 +188,10 @@ var (
 )
 
 type progError uint
-type loadError uint
 type storError uint
 type codeError uint
 
 func (addr progError) Error() string { return fmt.Sprintf("program smashed %v", uint(addr)) }
-func (addr loadError) Error() string { return fmt.Sprintf("invalid load at %v", uint(addr)) }
 func (addr storError) Error() string { return fmt.Sprintf("invalid store at %v", uint(addr)) }
 func (code codeError) Error() string { return fmt.Sprintf("invalid code %v", uint(code)) }
 

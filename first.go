@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"strconv"
 )
 
@@ -15,10 +16,9 @@ import (
 type VM struct {
 	ioCore
 
-	retBase uint
-	memBase uint
+	compiling bool // program mode
+	prog      uint // program counter
 
-	prog uint // program counter
 	last uint // last word
 
 	// The stack is simply a standard LIFO data structure that is used
@@ -35,24 +35,23 @@ type VM struct {
 	// actually mean indices into main memory.  Main memory is used for two
 	// things, primarily: the return stack and the dictionary.
 	mem []int
+
+	memLimit int
 }
 
 // The return stack is a LIFO data structure, independent of the
 // above-mentioned "the stack", which is used by FIRST to keep track of
 // function call return addresses.
 func (vm *VM) call(addr uint) {
-	if r := uint(vm.load(1)); r != 0 {
-		if r < vm.retBase {
-			vm.halt(errRetUnderflow)
-		} else if r >= vm.memBase {
-			vm.halt(errRetOverflow)
-		}
-		vm.stor(1, int(r+1))
-		vm.stor(r, int(vm.prog))
-		vm.logf("%v -> ret[%v]", int(vm.prog), r-vm.retBase)
+	if r := uint(vm.load(1)); r == 0 {
+		vm.prog = addr // early calls are just jumps
+	} else if retBase := uint(vm.load(10)); r < retBase {
+		vm.halt(errRetUnderflow)
+	} else if memBase := uint(vm.load(11)); r >= memBase {
+		vm.halt(errRetOverflow)
+	} else {
+		vm.stor(1, int(vm.pushProg(r, addr)))
 	}
-	vm.prog = addr
-	vm.logf("prog <- %v", vm.prog)
 }
 
 // The dictionary is a list of words.  Each word contains a header and a data
@@ -88,19 +87,19 @@ func (vm *VM) call(addr uint) {
 
 // Symbol   Name           Function
 //    -     binary minus   pop top 2 elements of stack, subtract, push
-func (vm *VM) sub() { b, a := vm.pop(), vm.pop(); vm.push(a - b) }
+func (vm *VM) sub() bool { b, a := vm.pop(), vm.pop(); vm.push(a - b); return false }
 
 // Symbol   Name           Function
 //    *     multiply       pop top 2 elements of stack, multiply, push
-func (vm *VM) mul() { b, a := vm.pop(), vm.pop(); vm.push(a * b) }
+func (vm *VM) mul() bool { b, a := vm.pop(), vm.pop(); vm.push(a * b); return false }
 
 // Symbol   Name           Function
 //    /     divide         pop top 2 elements of stack, divide, push
-func (vm *VM) div() { b, a := vm.pop(), vm.pop(); vm.push(a / b) }
+func (vm *VM) div() bool { b, a := vm.pop(), vm.pop(); vm.push(a / b); return false }
 
 // Symbol   Name           Function
 //   <0     less than 0    pop top element of stack, push 1 if < 0 else 0
-func (vm *VM) less() { a := vm.pop(); vm.push(boolInt(a < 0)) }
+func (vm *VM) less() bool { a := vm.pop(); vm.push(boolInt(a < 0)); return false }
 
 // Note that we can synthesize addition and negation from binary minus, but we
 // cannot synthesize a time efficient divide or multiply from it. <0 is
@@ -110,46 +109,80 @@ func (vm *VM) less() { a := vm.pop(); vm.push(boolInt(a < 0)) }
 
 // Symbol   Name    Function
 //   @      fetch   pop top of stack, treat as address to push contents of
-func (vm *VM) get() { addr := uint(vm.pop()); vm.push(vm.load(addr)) }
+func (vm *VM) get() bool { addr := uint(vm.pop()); vm.push(vm.load(addr)); return false }
 
 // Symbol   Name    Function
 //   !      store   top of stack is address, 2nd is value; store to memory and
 //                  pop both off the stack
-func (vm *VM) set() { addr := uint(vm.pop()); vm.stor(addr, vm.pop()) }
+func (vm *VM) set() bool { addr := uint(vm.pop()); vm.stor(addr, vm.pop()); return false }
 
 //// Input/Output Operations
 
 // Name    Function
 // echo    write top of stack to output as a rune
-func (vm *VM) echo() { vm.haltif(writeRune(vm.out, rune(vm.pop()))) }
+func (vm *VM) echo() bool { vm.haltif(writeRune(vm.out, rune(vm.pop()))); return false }
 
 // Name    Function
 // key     read a rune from input onto top of stack
-func (vm *VM) key() {
+func (vm *VM) key() bool {
 	r, _, err := vm.in.ReadRune()
-	vm.haltif(err)
+	if err == io.EOF {
+		return true
+	} else if err != nil {
+		vm.halt(err)
+	}
 	vm.push(int(r))
+	return false
 }
 
 // Name    Function
 // _read   read a space-delimited word, find it in the dictionary, and compile
 //         a pointer to that word's code pointer onto the current end of the
 //         dictionary
-func (vm *VM) read() {
+func (vm *VM) read() bool {
 	token := vm.scan()
+	if addr := vm.lookupToken(token); addr != 0 {
+		vm.logf("read %v -> @%v", token, addr)
+		if vm.compiling {
+			// no compile time stack -> call it now
+			defer func(prog uint) { vm.prog = prog }(vm.prog)
+			vm.prog = addr
+			vm.exec()
+		} else if r := uint(vm.load(1)); r != 0 {
+			// call in next exec() round
+			vm.stor(1, int(vm.pushProg(r, addr)))
+			return false
+		} else {
+			// no return stack yet -> call it now
+			defer func(prog uint) { vm.prog = prog }(vm.prog)
+			vm.prog = addr
+			vm.exec()
+		}
+	} else if val, err := vm.parseToken(token); err != nil {
+		vm.halt(err)
+	} else {
+		vm.logf("pushint %v -> %v", token, val)
+		vm.compile(vmCodePushint)
+		vm.compile(int(val))
+	}
+	return false
+}
+
+func (vm *VM) parseToken(token string) (int, error) {
+	n, err := strconv.ParseInt(token, 10, strconv.IntSize)
+	if err == nil {
+		return int(n), nil
+	}
+	return 0, err
+}
+
+func (vm *VM) lookupToken(token string) uint {
 	if name := vm.symbol(token); name != 0 {
 		if addr := vm.lookup(name); addr != 0 {
-			vm.logf("read %v -> %v -> %v @:%v", token, name, addr, vm.load(addr))
-			vm.call(addr)
-			return
+			return addr
 		}
 	}
-
-	val, err := strconv.ParseInt(token, 10, strconv.IntSize)
-	vm.haltif(err)
-	vm.logf("pushint %v -> %v", token, val)
-	vm.compile(vmCodePushint)
-	vm.compile(int(val))
+	return 0
 }
 
 // Although _read could be synthesized from key, we need _read to be able to
@@ -160,19 +193,22 @@ func (vm *VM) read() {
 // Name   Function
 // exit   leave the current function: pop the return stack
 //        into the program counter
-func (vm *VM) exit() {
+func (vm *VM) exit() bool {
 	r := uint(vm.load(1))
-	if r == 0 || r == vm.retBase {
-		vm.halt(nil)
-	} else if r < vm.retBase {
+	retBase := uint(vm.load(10))
+	memBase := uint(vm.load(11))
+	if r == 0 || r == retBase {
+		return true
+	} else if r < retBase {
 		vm.halt(errRetUnderflow)
-	} else if r > vm.memBase {
+	} else if r > memBase {
 		vm.halt(errRetOverflow)
 	}
 	r--
 	vm.prog = uint(vm.load(r))
-	vm.logf("exit prog <- %v <- ret[%v]", vm.prog, r-vm.retBase)
+	vm.logf("exit prog <- %v <- ret[%v]", vm.prog, r-retBase)
 	vm.stor(1, int(r))
+	return false
 }
 
 //// Immediate (compilation) Operations
@@ -182,26 +218,26 @@ func (vm *VM) exit() {
 //                         end of our string storage, and generate a header for
 //                         the new word so that when it is typed it compiles a
 //                         pointer to itself so that it can be executed.
-func (vm *VM) define() {
+func (vm *VM) define() bool {
 	token := vm.scan()
-	name := vm.symbolicate(token)
-	vm.logf("define @%v %v <- %v", vm.load(0), name, token)
-	vm.compileHeader(name)
-	vm.logf("post define prog:%v", vm.prog)
+	vm.logf("define %v -> @%v", token, vm.here())
+	vm.compileHeader(vm.symbolicate(token))
+	return false
 }
 
 // Symbol      Name        Function
 // immediate   immediate   when used immediately after a name following a ':',
 //                         makes the word being defined run whenever it is
 //                         typed.
-func (vm *VM) immediate() {
-	h := uint(vm.load(0))
+func (vm *VM) immediate() bool {
+	h := vm.here()
 	h--                  // back
 	code := vm.load(h)   // read run time code
 	h--                  // back
 	vm.stor(h, code)     // overwrite compile time code
 	vm.stor(0, int(h+1)) // continue
 	vm.logf("immediate @%v <- %v <- @%v", h-1, code, h)
+	return false
 }
 
 // : cannot be synthesized, because we could not synthesize anything.
@@ -213,7 +249,7 @@ func (vm *VM) immediate() {
 
 // Name   Function
 // pick   pop top of stack, use as index into stack and copy up that element
-func (vm *VM) pick() {
+func (vm *VM) pick() bool {
 	i := vm.pop()
 	i = len(vm.stack) - 1 - i
 	if i < 0 || i >= len(vm.stack) {
@@ -221,6 +257,7 @@ func (vm *VM) pick() {
 	} else {
 		vm.push(vm.stack[i])
 	}
+	return false
 }
 
 // If the data stack were stored in main memory, we could synthesize pick; but
@@ -241,47 +278,34 @@ func (vm *VM) pick() {
 // The first is "pushint".
 // It takes the next integer out of the instruction stream and pushes it on the
 // stack.  It is generated by _read when the input is not a known word.
-func (vm *VM) pushint() { vm.push(vm.loadProg()) }
+func (vm *VM) pushint() bool { vm.push(vm.loadProg()); return false }
 
 // The second is "compile me".
 // When this instruction is executed, a pointer to the word's data field is
 // appended to the dictionary.
-func (vm *VM) compileme() {
+func (vm *VM) compileme() bool {
 	vm.compile(int(vm.prog))
-	vm.exit()
-
-	// TODO blend the always-call above, with this always-inline below:
-	// for {
-	// 	switch val := vm.loadProg(); val {
-	// 	case vmCodeRun:
-	// 	case vmCodeExit:
-	// 		vm.exit()
-	// 		return
-	// 	case vmCodePushint:
-	// 		vm.compile(val)
-	// 		vm.compile(vm.loadProg())
-	// 	default:
-	// 		vm.compile(val)
-	// 	}
-	// }
+	return vm.exit()
 }
 
 // The third is "run me"--the word's data field is taken to be a stream of
 // pointers to words, and is executed.
-func (vm *VM) runme() {}
+func (vm *VM) runme() bool { return false }
 
 // One last note about the environment: FIRST builds a very small word
 // internally that it executes as its main loop.  This word calls _read and
 // then calls itself.  Each time it calls itself, it uses up a word on the
 // return stack, so it will eventually trash things. This is discussed some
 // more in section 2.
-func (vm *VM) compileMain() {
-	vm.compileHeader(vm.symbolicate("_main"))
-	code := uint(vm.load(0))
+func (vm *VM) compileEntry() uint {
+	vm.compileHeader(0)
+	vm.immediate()
+	h := vm.here()
 	vm.compile(vmCodeRead)
-	vm.compile(int(code))
+	// vm.immediate() FIXME
+	vm.compile(int(h))
 	vm.compile(vmCodeExit)
-	vm.prog = code
+	return h
 }
 
 const (
@@ -316,53 +340,58 @@ func (vm *VM) compileBuiltins() {
 			vm.immediate()
 		}
 		vm.compile(code)
-		// vm.immediate() // coalesce "runme foo" => "foo"
+		vm.immediate() // write the builtin code over the "runme" token with
 		if code != vmCodeExit {
 			vm.compile(vmCodeExit)
 		}
 	}
 }
 
-var vmCodeTable = [vmCodeMax]func(vm *VM){
-	(*VM).compileme,
+var vmCodeTable [vmCodeMax]func(vm *VM) bool
+var vmCodeNames [vmCodeMax]string
 
-	(*VM).define,
-	(*VM).immediate,
-	(*VM).read,
-	(*VM).get,
-	(*VM).set,
-	(*VM).sub,
-	(*VM).mul,
-	(*VM).div,
-	(*VM).less,
-	(*VM).exit,
-	(*VM).echo,
-	(*VM).key,
-	(*VM).pick,
+func init() {
+	vmCodeTable = [...]func(vm *VM) bool{
+		(*VM).compileme,
 
-	(*VM).runme,
-	(*VM).pushint,
-}
+		(*VM).define,
+		(*VM).immediate,
+		(*VM).read,
+		(*VM).get,
+		(*VM).set,
+		(*VM).sub,
+		(*VM).mul,
+		(*VM).div,
+		(*VM).less,
+		(*VM).exit,
+		(*VM).echo,
+		(*VM).key,
+		(*VM).pick,
 
-var vmCodeNames = [vmCodeMax]string{
-	"compileme",
+		(*VM).runme,
+		(*VM).pushint,
+	}
 
-	"define",
-	"immediate",
-	"read",
-	"get",
-	"set",
-	"sub",
-	"mul",
-	"div",
-	"less",
-	"exit",
-	"echo",
-	"key",
-	"pick",
+	vmCodeNames = [...]string{
+		"compileme",
 
-	"runme",
-	"pushint",
+		"define",
+		"immediate",
+		"read",
+		"get",
+		"set",
+		"sub",
+		"mul",
+		"div",
+		"less",
+		"exit",
+		"echo",
+		"key",
+		"pick",
+
+		"runme",
+		"pushint",
+	}
 }
 
 // Here is a sample FIRST program.  I'm assuming you're using the ASCII

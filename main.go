@@ -12,31 +12,32 @@ import (
 func main() {
 	ctx := context.Background()
 
-	var memSize int
 	var timeout time.Duration
 	var trace bool
-	flag.IntVar(&memSize, "mem-size", 1024, "specify VM memory size")
+	var memLimit int
 	flag.DurationVar(&timeout, "timeout", 0, "specify a time limit")
 	flag.BoolVar(&trace, "trace", false, "enable trace logging")
+	flag.IntVar(&memLimit, "mem-limit", 0, "enable memory limit")
 	flag.Parse()
+
+	var opts = []VMOption{
+		WithInput(os.Stdin),
+		WithOutput(os.Stdout),
+	}
+	if trace {
+		opts = append(opts, WithLogf(log.Printf))
+	}
+	if memLimit != 0 {
+		opts = append(opts, WithMemLimit(memLimit))
+	}
+	vm := New(opts...)
 
 	if timeout != 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-
-	var logOption VMOption
-	if trace {
-		logOption = WithLogf(log.Printf)
-	}
-
-	if err := New(
-		WithMemorySize(memSize),
-		WithInput(os.Stdin),
-		WithOutput(os.Stdout),
-		logOption,
-	).Run(ctx); err != nil {
+	if err := vm.Run(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: %+v\n", err)
 		os.Exit(1)
 	}

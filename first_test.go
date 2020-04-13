@@ -19,6 +19,9 @@ import (
 )
 
 func Test_VM(t *testing.T) {
+	var testCases vmTestCases
+
+	// primitive tests that work by driving individual VM methods
 	var (
 		compileme = (*VM).compileme
 		define    = (*VM).define
@@ -35,10 +38,9 @@ func Test_VM(t *testing.T) {
 		key       = (*VM).key
 		pick      = (*VM).pick
 		pushint   = (*VM).pushint
-		step      = (*VM).step
+		execOp    = (*VM).execOp
 	)
-
-	vmTestCases{
+	testCases = append(testCases,
 		// binary integer operation on the stack
 		vmTest("sub").withStack(5, 3, 1).do(sub).expectStack(5, 2),
 		vmTest("div").withStack(7, 13, 3).do(div).expectStack(7, 4),
@@ -66,10 +68,7 @@ func Test_VM(t *testing.T) {
 		vmTest("pushint").withMem(99, 42, 108).withProg(1).do(pushint).expectStack(42).expectProg(2),
 
 		// compile the program counter
-		vmTest("compileme: sub exit").withMemAt(0,
-			39, // 0: h
-			0,  // 1: r
-		).withMemAt(32,
+		vmTest("compileme: early").withH(39).withMemBase(32,
 			0,             // 32: word prev
 			vmCodeSub,     // 33: ... name
 			vmCodeCompile, // 34: ...
@@ -80,27 +79,46 @@ func Test_VM(t *testing.T) {
 			0,             // 39:           <-- h
 			0,             // 40:
 			0,             // 41:
-		).withProg(35).do(compileme).expectMemAt(0,
-			40, // 0: h
-			0,  // 1: r
-		).expectMemAt(32,
+		).withProg(35).do(compileme).expectH(40).expectMemAt(32,
 			0,             // 32: word prev
 			vmCodeSub,     // 33: ... name
 			vmCodeCompile, // 34: ...
-			vmCodeRun,     // 35: ...
-			vmCodeSub,     // 36: ...       <-- prog
+			vmCodeRun,     // 35: ...       <-- prog
+			vmCodeSub,     // 36: ...
 			vmCodeExit,    // 37: ...
 			0,             // 38:
 			35,            // 39:
 			0,             // 40:           <-- h
 			0,             // 41:
 		).expectProg(35),
+		vmTest("compileme: normal").withH(39).withRetBase(16,
+			108,
+		).withMemBase(32,
+			0,             // 32: word prev
+			vmCodeSub,     // 33: ... name
+			vmCodeCompile, // 34: ...
+			vmCodeRun,     // 35: ...       <-- prog
+			vmCodeSub,     // 36: ...
+			vmCodeExit,    // 37: ...
+			0,             // 38:
+			0,             // 39:           <-- h
+			0,             // 40:
+			0,             // 41:
+		).withProg(35).do(compileme).expectH(40).expectMemAt(32,
+			0,             // 32: word prev
+			vmCodeSub,     // 33: ... name
+			vmCodeCompile, // 34: ...
+			vmCodeRun,     // 35: ...
+			vmCodeSub,     // 36: ...
+			vmCodeExit,    // 37: ...
+			0,             // 38:
+			35,            // 39:
+			0,             // 40:           <-- h
+			0,             // 41:
+		).expectProg(108),
 
 		// compile the header of a definition
-		vmTest("define").withMem(
-			32, // 0: h
-			0,  // 1: r
-		).withMemAt(32,
+		vmTest("define").withH(32).withMemAt(32,
 			0, // 32: <-- h
 			0, // 33:
 			0, // 34:
@@ -108,26 +126,18 @@ func Test_VM(t *testing.T) {
 			0, // 36:
 			0, // 37:
 			0, // 38:
-		).withInput(`
-			:
-		`).do(define).expectMemAt(0,
-			36, // 0: h
-			0,  // 1: r
-		).expectMemAt(32,
+		).withInput(` : `).do(define).expectH(36).expectMemAt(32,
 			0,             // 32: word prev
 			1,             // 33: word name
 			vmCodeCompile, // 34: ...
 			vmCodeRun,     // 35: ...
-			0,             // 36: <-- h
+			0,             // 36:           <-- h
 			0,             // 37:
 			0,             // 38:
 		).expectString(1, ":").expectLast(32),
 
 		// modify the header to create an immediate word
-		vmTest("immediate").withMem(
-			32, // 0: h
-			0,  // 1: r
-		).withMemAt(32,
+		vmTest("immediate").withH(32).withMemAt(32,
 			0, // 32: <-- h
 			0, // 33:
 			0, // 34:
@@ -135,58 +145,39 @@ func Test_VM(t *testing.T) {
 			0, // 36:
 			0, // 37:
 			0, // 38:
-		).withInput(`:`).do(define, immediate).expectMemAt(0,
-			35, // 0: h
-			0,  // 1: r
-		).expectMemAt(32,
+		).withInput(`:`).do(define, immediate).expectH(35).expectMemAt(32,
 			0,         // 32: word prev
 			1,         // 33: ... name
 			vmCodeRun, // 34: ...
-			vmCodeRun, // 35: ... <-- h
+			vmCodeRun, // 35: ...           <-- h
 			0,         // 36:
 			0,         // 37:
 		).expectString(1, ":"),
 
 		// stop running the current function
-		vmTest("exit").withOptions(
-			WithRetBase(4),
-			WithMemBase(8),
-		).withMem(
-			0,          // 0: h
-			7,          // 1: r
-			0,          // 2:
-			0,          // 3:
-			8,          // 4: ret[0]
-			9,          // 5: ret[1]
-			10,         // 6: ret[2]
-			11,         // 7: ret[3]
-			vmCodeExit, // 8:
-			vmCodeExit, // 9:
-			vmCodeExit, // 10:
-			vmCodeExit, // 11:
-		).do(exit, step).expectMem(
-			0,          // 0: h
-			4,          // 1: r
-			0,          // 2:
-			0,          // 3:
-			8,          // 4: ret[0]
-			9,          // 5: ret[1]
-			10,         // 6: ret[2]
-			11,         // 7: ret[3]
-			vmCodeExit, // 8:
-			vmCodeExit, // 9:
-			vmCodeExit, // 10:
-			vmCodeExit, // 11:
+		vmTest("exit").withH(0).withRetBase(12,
+			16, // 12: ret[0]
+			17, // 13: ret[1]
+			18, // 14: ret[2]
+			19, // 15: ret[3]
+		).withMemBase(16,
+			vmCodeExit, // 16:
+			vmCodeExit, // 17:
+			vmCodeExit, // 18:
+			vmCodeExit, // 19:
+		).do(exit, execOp).expectH(0).expectR(12).expectMemAt(12,
+			16, // 12: ret[0]
+			17, // 13: ret[1]
+			18, // 14: ret[2]
+			19, // 15: ret[3]
+			// TODO expectProg
 		),
 
 		// read a word from input and compile a pointer to it
-		vmTest("read").withOptions(
-			WithRetBase(16),
-			WithMemBase(32),
-		).withMem(
-			41, // 0: h
-			16, // 1: r
-		).withString(1, "foo").withString(2, "bar").withMemAt(32,
+		vmTest("read").withH(41).withRetBase(16).withStrings(
+			1, "foo",
+			2, "bar",
+		).withMemBase(32,
 			0,             // 32:
 			1,             // 33:
 			vmCodeCompile, // 34:
@@ -196,140 +187,169 @@ func Test_VM(t *testing.T) {
 			32,            // 38:
 			2,             // 39:
 			vmCodeRun,     // 40:
-			vmCodeRun,     // 41:  <-- h
+			vmCodeRun,     // 41:           <-- h
 			0,             // 42:
 			0,             // 43:
 			0,             // 44:
-		).withProg(37).withLast(38).withInput("foo").do(read, step).expectMemAt(0,
-			42, // 0: h
-			16, // 1: r
-		).expectMemAt(32,
+		).withProg(37).withLast(38).withInput("foo").do(
+			read, execOp,
+		).expectH(42).expectMemAt(32,
 			0,             // 32:
 			1,             // 33:
 			vmCodeCompile, // 34:
 			vmCodeRun,     // 35:
 			vmCodeSub,     // 36:
 			vmCodeExit,    // 37:
-			32,            // 38:
-			2,             // 39:
-			vmCodeRun,     // 40:
-			35,            // 41:
-			0,             // 42:  <-- h
-			0,             // 43:
-			0,             // 44:
+		).expectMemAt(38,
+			32,        // 38:
+			2,         // 39:
+			vmCodeRun, // 40:
+			36,        // 41:
+			0,         // 42:           <-- h
+			0,         // 43:
+			0,         // 44:
 		),
 
 		// output one character
 		// input one character
 		vmTest("key^2 => echo^2").withInput("ab").do(key, key, echo, echo).expectOutput("ba"),
+	)
 
-		vmTest("builtin setup").withOptions(
-			WithRetBase(16),
-			WithMemBase(32),
-			WithMemorySize(256),
-		).withInput(`
-			: immediate _read @ ! - * / < exit echo key pick
-		`).expectDump(lines(
-			`prog: 112`,
-			`dict: [107 101 95 89 84 78 72 66 60 54 48 42 37 32]`,
+	testCases = append(testCases, vmTest("builtin setup").withInput(`
+		: immediate _read @ ! - * / < exit echo key pick
+	`).
+		expectMemAt(32, 0, 0, vmCodeRun, vmCodeRead, 35, vmCodeExit).
+		expectMemAt(38, 32, 1, vmCodeDefine, vmCodeExit).
+		expectMemAt(42, 38, 2, vmCodeImmediate, vmCodeExit).
+		expectMemAt(46, 42, 3, vmCodeCompile, vmCodeRead, vmCodeExit).
+		expectDump(lines(
+			`prog: 36`,
+			`dict: [95 90 85 81 76 71 66 61 56 51 46 42 38 32]`,
 			`stack: []`,
-			`@   0 113 dict`,
-			`@   1 16 ret`,
-			`@  32 : : immediate 14 1 10`,
-			`@  37 : immediate immediate 14 2 10`,
-			`@  42 : _read 14 3 10`,
-			`@  48 : @ 14 4 10`,
-			`@  54 : ! 14 5 10`,
-			`@  60 : - 14 6 10`,
-			`@  66 : * 14 7 10`,
-			`@  72 : / 14 8 10`,
-			`@  78 : < 14 9 10`,
-			`@  84 : exit 14 10`,
-			`@  89 : echo 14 11 10`,
-			`@  95 : key 14 12 10`,
-			`@ 101 : pick 14 13 10`,
-			`@ 107 : _main 14 3 110`,
-		)),
+			`@   0 100 dict`,
+			`@   1 0 ret`,
+			`@   2 0`,
+			`@   3 0`,
+			`@   4 0`,
+			`@   5 0`,
+			`@   6 0`,
+			`@   7 0`,
+			`@   8 0`,
+			`@   9 0`,
+			`@  10 0 retBase`,
+			`@  11 32 memBase`,
+			`@  32 immediate 14 3 35 10`,
+			`@  38 : : immediate 1 10`,
+			`@  42 : immediate immediate 2 10`,
+			`@  46 : _read 3 10`,
+			`@  51 : @ 4 10`,
+			`@  56 : ! 5 10`,
+			`@  61 : - 6 10`,
+			`@  66 : * 7 10`,
+			`@  71 : / 8 10`,
+			`@  76 : < 9 10`,
+			`@  81 : exit 10`,
+			`@  85 : echo 11 10`,
+			`@  90 : key 12 10`,
+			`@  95 : pick 13 10`,
+		)))
 
-		/*
+	// FIXME describe
+	testCases = append(testCases, vmTest("new main").withInput(`
+		: immediate _read @ ! - * / < exit echo key pick
 
-			{"new main", vmTestScript{
-				retBase: 16,
-				memBase: 32,
-				memSize: 256,
-				program: lines(
-					`: immediate _read @ ! - * / < exit echo key pick`,
-					`: ] 1 @ 1 - 1 ! _read ]`,
-					`: main immediate ]`,
-					`main`,
-				),
-				dump: lines(
-					`prog: 47`,
-					`dict: [128 113 107 101 95 89 84 78 72 66 60 54 48 42 37 32]`,
-					`stack: []`,
-					`@   0 132 dict`,
-					`@   1 31 ret`,
-					`@  16 113 ret_0`,
-					`@  17 113 ret_1`,
-					`@  18 113 ret_2`,
-					`@  19 113 ret_3`,
-					`@  20 113 ret_4`,
-					`@  21 113 ret_5`,
-					`@  22 113 ret_6`,
-					`@  23 113 ret_7`,
-					`@  24 113 ret_8`,
-					`@  25 113 ret_9`,
-					`@  26 113 ret_10`,
-					`@  27 113 ret_11`,
-					`@  28 112 ret_12`,
-					`@  29 132 ret_13`,
-					`@  30 127 ret_14`,
-					`@  32 : : immediate 14 1 10`,
-					`@  37 : immediate immediate 14 2 10`,
-					`@  42 : _read 14 3 10`,
-					`@  48 : @ 14 4 10`,
-					`@  54 : ! 14 5 10`,
-					`@  60 : - 14 6 10`,
-					`@  66 : * 14 7 10`,
-					`@  72 : / 14 8 10`,
-					`@  78 : < 14 9 10`,
-					`@  84 : exit 14 10`,
-					`@  89 : echo 14 11 10`,
-					`@  95 : key 14 12 10`,
-					`@ 101 : pick 14 13 10`,
-					`@ 107 : _main 14 3 110`,
-					`@ 113 : ] 14 15 1 51 15 1 63 15 1 57 45 116`,
-					`@ 128 : main immediate 14 116`,
-				),
-			}.run},
+		: ]
+			1 @
+			1 -
+			1 !
+			_read
+			]
 
-			{"hello", vmTestScript{
-				retBase: 16,
-				memBase: 32,
-				memSize: 256,
-				program: `
-					: immediate _read @ ! - * / < exit echo key pick
-					: ] 1 @ 1 - 1 ! _read ]
-					: main immediate ]
-					main
+		: main immediate ]
+		main
+	`).withTestLog().expectMemAt(100,
+		107,
+		14,
+		vmCodeCompile,
+		vmCodeRun,
+		vmCodePushint, 1, vmCodeGet,
+		vmCodePushint, 1, vmCodeSub,
+		vmCodePushint, 1, vmCodeSet,
+		vmCodeRead,
+		104,
+	).expectMemAt(115,
+		100,
+		15,
+		vmCodeRun,
+		104,
+	).expectDump(lines(
+		`prog: 36`,
+		`dict: [113 107 101 95 90 84 78 72 66 60 54 48 43 38 32]`,
+		`stack: []`,
+		`@   0 117 dict`,
+		`@   1 0 ret`,
+		`@   2 0`,
+		`@   3 0`,
+		`@   4 0`,
+		`@   5 0`,
+		`@   6 0`,
+		`@   7 0`,
+		`@   8 0`,
+		`@   9 0`,
+		`@  10 0 retBase`,
+		`@  11 32 memBase`,
+		`@  32 immediate 14 3 35 10`,
+		`@  38 : : immediate 1 10`,
+		`@  42 : immediate immediate 2 10`,
+		`@  46 : _read 3 10`,
+		`@  51 : @ 4 10`,
+		`@  56 : ! 5 10`,
+		`@  61 : - 6 10`,
+		`@  66 : * 7 10`,
+		`@  71 : / 8 10`,
+		`@  76 : < 9 10`,
+		`@  81 : exit 10`,
+		`@  85 : echo 11 10`,
+		`@  90 : key 12 10`,
+		`@  95 : pick 13 10`,
+		`@ 100 : ] 14 15 1 4 15 1 6 15 1 5 3 104`,
+		`@ 115 : main immediate 14 104`,
+	)))
 
-					: '0' 48 exit
-					: nl  10 exit
-					: itoa '0' +
+	/*
+		{"hello", vmTestScript{
+			retBase: 16,
+			memBase: 32,
+			memSize: 256,
+			program: `
+				: immediate _read @ ! - * / < exit echo key pick
+				: ] 1 @ 1 - 1 ! _read ]
+				: main immediate ]
+				main
 
-					: test immediate
-						0         itoa echo
-						10 3 -    itoa echo
-						21 3 /    itoa echo
-						9 2 3 * - itoa echo
-						2 2 *     itoa echo
-						nl echo
-						exit
-					test
-					`,
-			}.run},
-		*/
-	}.run(t)
+				: '0' 48 exit
+				: nl  10 exit
+				: itoa '0' +
+
+				: test immediate
+					0         itoa echo
+					10 3 -    itoa echo
+					21 3 /    itoa echo
+					9 2 3 * - itoa echo
+					2 2 *     itoa echo
+					nl echo
+					exit
+				test
+				`,
+		}.run},
+	*/
+
+	testCases.run(t)
+}
+
+func (vm *VM) execOp() bool {
+	vm.exec()
+	return true
 }
 
 type vmTestCases []vmTestCase
@@ -355,7 +375,7 @@ type vmTestCase struct {
 	name   string
 	opts   []VMOption
 	setup  []func(t *testing.T, vm *VM)
-	ops    []func(vm *VM)
+	ops    []func(vm *VM) bool
 	expect []func(t *testing.T, vm *VM)
 }
 
@@ -385,6 +405,19 @@ func (vmt vmTestCase) withStack(values ...int) vmTestCase {
 	return vmt
 }
 
+func (vmt vmTestCase) withStrings(idStringPairs ...interface{}) vmTestCase {
+	if len(idStringPairs)%2 == 1 {
+		panic("must be given variadic pairs")
+	}
+	for i := 0; i < len(idStringPairs); i++ {
+		id := idStringPairs[i].(int)
+		i++
+		s := idStringPairs[i].(string)
+		vmt = vmt.withString(uint(id), s)
+	}
+	return vmt
+}
+
 func (vmt vmTestCase) withString(id uint, s string) vmTestCase {
 	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
 		if need := int(id) - len(vm.symbols.strings); need > 0 {
@@ -407,13 +440,48 @@ func (vmt vmTestCase) withMem(values ...int) vmTestCase {
 }
 
 func (vmt vmTestCase) withMemAt(addr int, values ...int) vmTestCase {
+	if len(values) != 0 {
+		vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
+			end := addr + len(values)
+			if need := end - len(vm.mem); need > 0 {
+				vm.mem = append(vm.mem, make([]int, need)...)
+			}
+			copy(vm.mem[addr:], values)
+		}))
+	}
+	return vmt
+}
+
+func (vmt vmTestCase) withH(val int) vmTestCase {
 	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-		end := addr + len(values)
-		if need := end - len(vm.mem); need > 0 {
-			vm.mem = append(vm.mem, make([]int, need)...)
-		}
-		copy(vm.mem[addr:], values)
+		vm.stor(0, val)
 	}))
+	return vmt
+}
+
+func (vmt vmTestCase) withR(val int) vmTestCase {
+	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
+		vm.stor(1, val)
+	}))
+	return vmt
+}
+
+func (vmt vmTestCase) withRetBase(addr int, values ...int) vmTestCase {
+	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
+		vm.stor(10, addr)
+	}))
+	return vmt.withMemAt(addr, values...).withR(addr + len(values))
+}
+
+func (vmt vmTestCase) withMemBase(addr int, values ...int) vmTestCase {
+	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
+		vm.stor(11, addr)
+	}))
+	return vmt.withMemAt(addr, values...)
+}
+
+func (vmt vmTestCase) withMemLimit(limit int) vmTestCase {
+	vmt.opts = append(vmt.opts, withMemLimit(limit))
 	return vmt
 }
 
@@ -422,7 +490,7 @@ func (vmt vmTestCase) withInput(source string) vmTestCase {
 	return vmt
 }
 
-func (vmt vmTestCase) do(ops ...func(vm *VM)) vmTestCase {
+func (vmt vmTestCase) do(ops ...func(vm *VM) bool) vmTestCase {
 	vmt.ops = append(vmt.ops, ops...)
 	return vmt
 }
@@ -470,6 +538,20 @@ func (vmt vmTestCase) expectMemAt(addr int, values ...int) vmTestCase {
 	return vmt
 }
 
+func (vmt vmTestCase) expectH(value int) vmTestCase {
+	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
+		assert.Equal(t, value, vm.mem[0], "expected H value")
+	})
+	return vmt
+}
+
+func (vmt vmTestCase) expectR(value int) vmTestCase {
+	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
+		assert.Equal(t, value, vm.mem[1], "expected R value")
+	})
+	return vmt
+}
+
 func (vmt vmTestCase) expectOutput(output string) vmTestCase {
 	var out strings.Builder
 	vmt.opts = append(vmt.opts, WithOutput(&out))
@@ -512,6 +594,7 @@ func (vmt vmTestCase) withTestHexOutput() vmTestCase {
 }
 
 func (vmt vmTestCase) run(t *testing.T) {
+	const defaultMemLimit = 4 * 1024
 	var vm VM
 
 	for _, opt := range vmt.opts {
@@ -525,6 +608,9 @@ func (vmt vmTestCase) run(t *testing.T) {
 	}
 	if vm.out == nil {
 		vm.out = newWriteFlusher(ioutil.Discard)
+	}
+	if vm.memLimit == 0 {
+		vm.memLimit = defaultMemLimit
 	}
 
 	defer vm.Close()
@@ -540,7 +626,9 @@ func (vmt vmTestCase) run(t *testing.T) {
 		_, paniced, stack := isolate(func() {
 			for i, op := range vmt.ops {
 				t.Logf("do[%v] %v", i, runtime.FuncForPC(reflect.ValueOf(op).Pointer()).Name())
-				op(&vm)
+				if op(&vm) && i < len(vmt.ops)-1 {
+					panic("ops done early")
+				}
 			}
 		})
 		if paniced != nil {
@@ -627,23 +715,38 @@ func (vm *vmDumper) describeLow(addr uint) (uint, string) {
 		sb.WriteString(" dict")
 	case 1:
 		sb.WriteString(" ret")
+	case 10:
+		sb.WriteString(" retBase")
+	case 11:
+		sb.WriteString(" memBase")
 	default:
-		if rb := vm.retBase; rb != 0 && addr >= rb {
-			return addr, ""
+		if addr > 11 {
+			retBase := uint(vm.mem[10])
+			if retBase != 0 && addr >= retBase {
+				return addr, ""
+			}
+			memBase := uint(vm.mem[11])
+			if memBase != 0 && addr >= memBase {
+				return addr, ""
+			}
+			if retBase == 0 && val == 0 {
+				return addr, ""
+			}
 		}
 	}
 	return addr + 1, sb.String()
 }
 
 func (vm *vmDumper) describeRet(addr uint) (uint, string) {
-	if addr >= vm.memBase {
+	if memBase := uint(vm.mem[11]); addr >= memBase {
 		return addr, ""
 	}
+	retBase := uint(vm.mem[10])
 	var sb strings.Builder
 	sb.Grow(32)
 	sb.WriteString(strconv.Itoa(vm.mem[addr]))
 	sb.WriteString(" ret_")
-	sb.WriteString(strconv.Itoa(int(addr - vm.retBase)))
+	sb.WriteString(strconv.Itoa(int(addr - retBase)))
 	if addr >= uint(vm.mem[1]) {
 		return addr + 1, ""
 	}
@@ -651,19 +754,29 @@ func (vm *vmDumper) describeRet(addr uint) (uint, string) {
 }
 
 func (vm *vmDumper) describeWord(addr uint) (uint, string) {
-	if word := vm.word(); word == 0 || addr != word {
+	word := vm.word()
+	if word == 0 {
+		return addr, ""
+	}
+
+	if addr != word {
 		return addr, ""
 	}
 
 	var sb strings.Builder
-	sb.WriteString(": ")
 	addr++
 
-	sb.WriteString(vm.string(uint(vm.mem[addr])))
+	if name := uint(vm.mem[addr]); name != 0 {
+		sb.WriteString(": ")
+		sb.WriteString(vm.string(name))
+	}
 	addr++
 
 	if code := uint(vm.mem[addr]); code != vmCodeCompile {
-		sb.WriteString(" immediate")
+		if sb.Len() > 0 {
+			sb.WriteByte(' ')
+		}
+		sb.WriteString("immediate")
 	} else {
 		addr++
 	}
