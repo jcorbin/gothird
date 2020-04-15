@@ -38,7 +38,7 @@ func Test_VM(t *testing.T) {
 		key       = (*VM).key
 		pick      = (*VM).pick
 		pushint   = (*VM).pushint
-		execOp    = (*VM).execOp
+		step      = (*VM).step
 	)
 	testCases = append(testCases,
 		// binary integer operation on the stack
@@ -59,39 +59,16 @@ func Test_VM(t *testing.T) {
 		vmTest("pick 5").withStack(1, 2, 3, 4, 5, 5).do(pick).expectStack(1, 2, 3, 4, 5, 0),
 
 		// read from memory
-		vmTest("get").withMem(99, 42, 108).withStack(1).do(get).expectStack(42),
+		vmTest("get").withMemBase(32, 99, 42, 108).withStack(33).do(get).expectStack(42),
 
 		// write to memory
-		vmTest("set").withMem(0, 0, 0).withStack(108, 1).do(set).expectMem(0, 108, 0),
+		vmTest("set").withMemBase(32, 0, 0, 0).withStack(108, 33).do(set).expectMemAt(32, 0, 108, 0),
 
 		// push an immediate value onto the stack
-		vmTest("pushint").withMem(99, 42, 108).withProg(1).do(pushint).expectStack(42).expectProg(2),
+		vmTest("pushint").withMemAt(32, 99, 42, 108).withProg(33).do(pushint).expectStack(42).expectProg(34),
 
 		// compile the program counter
-		vmTest("compileme: early").withH(39).withMemBase(32,
-			0,             // 32: word prev
-			vmCodeSub,     // 33: ... name
-			vmCodeCompile, // 34: ...
-			vmCodeRun,     // 35: ...       <-- prog
-			vmCodeSub,     // 36: ...
-			vmCodeExit,    // 37: ...
-			0,             // 38:
-			0,             // 39:           <-- h
-			0,             // 40:
-			0,             // 41:
-		).withProg(35).do(compileme).expectH(40).expectMemAt(32,
-			0,             // 32: word prev
-			vmCodeSub,     // 33: ... name
-			vmCodeCompile, // 34: ...
-			vmCodeRun,     // 35: ...       <-- prog
-			vmCodeSub,     // 36: ...
-			vmCodeExit,    // 37: ...
-			0,             // 38:
-			35,            // 39:
-			0,             // 40:           <-- h
-			0,             // 41:
-		).expectProg(35),
-		vmTest("compileme: normal").withH(39).withRetBase(16,
+		vmTest("compileme").withH(39).withRetBase(16,
 			108,
 		).withMemBase(32,
 			0,             // 32: word prev
@@ -112,7 +89,7 @@ func Test_VM(t *testing.T) {
 			vmCodeSub,     // 36: ...
 			vmCodeExit,    // 37: ...
 			0,             // 38:
-			35,            // 39:
+			36,            // 39:
 			0,             // 40:           <-- h
 			0,             // 41:
 		).expectProg(108),
@@ -165,26 +142,25 @@ func Test_VM(t *testing.T) {
 			vmCodeExit, // 17:
 			vmCodeExit, // 18:
 			vmCodeExit, // 19:
-		).do(exit, execOp).expectH(0).expectR(12).expectMemAt(12,
+		).do(exit, step, nil).expectMemAt(12,
 			16, // 12: ret[0]
 			17, // 13: ret[1]
 			18, // 14: ret[2]
 			19, // 15: ret[3]
-			// TODO expectProg
-		),
+		).expectProg(17).expectH(16).expectR(12),
 
 		// read a word from input and compile a pointer to it
-		vmTest("read").withH(41).withRetBase(16).withStrings(
+		vmTest("read").withStrings(
 			1, "foo",
 			2, "bar",
-		).withMemBase(32,
+		).withH(41).withMemBase(32,
 			0,             // 32:
 			1,             // 33:
 			vmCodeCompile, // 34:
 			vmCodeRun,     // 35:
 			vmCodeSub,     // 36:
-			vmCodeExit,    // 37:
-			32,            // 38:
+			vmCodeExit,    // 37:           <-- prog
+			32,            // 38:           <-- last
 			2,             // 39:
 			vmCodeRun,     // 40:
 			vmCodeRun,     // 41:           <-- h
@@ -192,7 +168,7 @@ func Test_VM(t *testing.T) {
 			0,             // 43:
 			0,             // 44:
 		).withProg(37).withLast(38).withInput("foo").do(
-			read, execOp,
+			read, step, nil,
 		).expectH(42).expectMemAt(32,
 			0,             // 32:
 			1,             // 33:
@@ -227,7 +203,7 @@ func Test_VM(t *testing.T) {
 			`dict: [95 90 85 81 76 71 66 61 56 51 46 42 38 32]`,
 			`stack: []`,
 			`@   0 100 dict`,
-			`@   1 0 ret`,
+			`@   1 16 ret`,
 			`@   2 0`,
 			`@   3 0`,
 			`@   4 0`,
@@ -236,8 +212,12 @@ func Test_VM(t *testing.T) {
 			`@   7 0`,
 			`@   8 0`,
 			`@   9 0`,
-			`@  10 0 retBase`,
+			`@  10 16 retBase`,
 			`@  11 32 memBase`,
+			`@  12 0`,
+			`@  13 0`,
+			`@  14 0`,
+			`@  15 0`,
 			`@  32 immediate 14 3 35 10`,
 			`@  38 : : immediate 1 10`,
 			`@  42 : immediate immediate 2 10`,
@@ -267,22 +247,27 @@ func Test_VM(t *testing.T) {
 
 		: main immediate ]
 		main
-	`).withTestLog().expectMemAt(100,
-		107,
+	`).expectMemAt(100,
+		95,
 		14,
 		vmCodeCompile,
 		vmCodeRun,
-		vmCodePushint, 1, vmCodeGet,
-		vmCodePushint, 1, vmCodeSub,
-		vmCodePushint, 1, vmCodeSet,
-		vmCodeRead,
+		vmCodePushint, 1, 54, // vmCodeGet,
+		vmCodePushint, 1, 64, // vmCodeSub,
+		vmCodePushint, 1, 59, // vmCodeSet,
+		49, // vmCodeRead,
 		104,
-	).expectMemAt(115, 100, 15, vmCodeRun, 104).expectDump(lines(
+	).expectMemAt(115,
+		100,
+		15,
+		vmCodeRun,
+		104,
+	).withTestLog().expectMemAt(115, 100, 15, vmCodeRun, 104).expectDump(lines(
 		`prog: 36`,
-		`dict: [113 107 101 95 90 84 78 72 66 60 54 48 43 38 32]`,
+		`dict: [115 100 95 90 85 81 76 71 66 61 56 51 46 42 38 32]`,
 		`stack: []`,
 		`@   0 117 dict`,
-		`@   1 0 ret`,
+		`@   1 29 ret`,
 		`@   2 0`,
 		`@   3 0`,
 		`@   4 0`,
@@ -291,8 +276,25 @@ func Test_VM(t *testing.T) {
 		`@   7 0`,
 		`@   8 0`,
 		`@   9 0`,
-		`@  10 0 retBase`,
+		`@  10 16 retBase`,
 		`@  11 32 memBase`,
+		`@  12 0`,
+		`@  13 0`,
+		`@  14 0`,
+		`@  15 0`,
+		`@  16 37 ret_0`,
+		`@  17 37 ret_1`,
+		`@  18 37 ret_2`,
+		`@  19 37 ret_3`,
+		`@  20 37 ret_4`,
+		`@  21 37 ret_5`,
+		`@  22 37 ret_6`,
+		`@  23 37 ret_7`,
+		`@  24 37 ret_8`,
+		`@  25 37 ret_9`,
+		`@  26 37 ret_10`,
+		`@  27 37 ret_11`,
+		`@  28 37 ret_12`,
 		`@  32 immediate 14 3 35 10`,
 		`@  38 : : immediate 1 10`,
 		`@  42 : immediate immediate 2 10`,
@@ -307,7 +309,7 @@ func Test_VM(t *testing.T) {
 		`@  85 : echo 11 10`,
 		`@  90 : key 12 10`,
 		`@  95 : pick 13 10`,
-		`@ 100 : ] 14 15 1 4 15 1 6 15 1 5 3 104`,
+		`@ 100 : ] 14 15 1 54 15 1 64 15 1 59 49 104`,
 		`@ 115 : main immediate 14 104`,
 	)))
 
@@ -342,11 +344,6 @@ func Test_VM(t *testing.T) {
 	testCases.run(t)
 }
 
-func (vm *VM) execOp() bool {
-	vm.exec()
-	return true
-}
-
 type vmTestCases []vmTestCase
 
 func (vmts vmTestCases) run(t *testing.T) {
@@ -370,7 +367,8 @@ type vmTestCase struct {
 	name   string
 	opts   []VMOption
 	setup  []func(t *testing.T, vm *VM)
-	ops    []func(vm *VM) bool
+	ops    []func(vm *VM)
+	opErr  error
 	expect []func(t *testing.T, vm *VM)
 }
 
@@ -427,13 +425,6 @@ func (vmt vmTestCase) withString(id uint, s string) vmTestCase {
 	return vmt
 }
 
-func (vmt vmTestCase) withMem(values ...int) vmTestCase {
-	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-		vm.mem = append(vm.mem, values...)
-	}))
-	return vmt
-}
-
 func (vmt vmTestCase) withMemAt(addr int, values ...int) vmTestCase {
 	if len(values) != 0 {
 		vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
@@ -485,7 +476,7 @@ func (vmt vmTestCase) withInput(source string) vmTestCase {
 	return vmt
 }
 
-func (vmt vmTestCase) do(ops ...func(vm *VM) bool) vmTestCase {
+func (vmt vmTestCase) do(ops ...func(vm *VM)) vmTestCase {
 	vmt.ops = append(vmt.ops, ops...)
 	return vmt
 }
@@ -514,13 +505,6 @@ func (vmt vmTestCase) expectStack(values ...int) vmTestCase {
 func (vmt vmTestCase) expectString(id uint, s string) vmTestCase {
 	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
 		assert.Equal(t, s, vm.string(id), "expected string #%v", id)
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) expectMem(values ...int) vmTestCase {
-	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		assert.Equal(t, values, vm.mem, "expected memory values")
 	})
 	return vmt
 }
@@ -617,25 +601,48 @@ func (vmt vmTestCase) run(t *testing.T) {
 		}
 	}()
 
-	if len(vmt.ops) > 0 {
-		_, paniced, stack := isolate(func() {
-			for i, op := range vmt.ops {
-				t.Logf("do[%v] %v", i, runtime.FuncForPC(reflect.ValueOf(op).Pointer()).Name())
-				if op(&vm) && i < len(vmt.ops)-1 {
-					panic("ops done early")
-				}
-			}
-		})
-		if paniced != nil {
-			require.Fail(t, "unexpected VM panic", "Panic value: %v\n\tPanic stack:\t%s", paniced, stack)
-		}
-	} else {
-		withTimeout(context.Background(), time.Second, func(ctx context.Context) {
+	withTimeout(context.Background(), time.Second, func(ctx context.Context) {
+		if len(vmt.ops) > 0 {
+			vmt.runOps(ctx, t, &vm)
+		} else {
 			require.NoError(t, vm.Run(ctx), "expected no VM error")
-		})
-	}
+		}
+	})
+
 	for _, expect := range vmt.expect {
 		expect(t, &vm)
+	}
+}
+
+func (vmt vmTestCase) runOps(ctx context.Context, t *testing.T, vm *VM) {
+	names := make([]string, len(vmt.ops))
+	for i, op := range vmt.ops {
+		names[i] = runtime.FuncForPC(reflect.ValueOf(op).Pointer()).Name()
+	}
+
+	if _, paniced, stack := isolate(func() {
+		vm.init()
+		for i := 0; i < len(vmt.ops); i++ {
+			if vmt.ops[i] == nil {
+				i--
+			}
+			t.Logf("do[%v] %v", i, names[i])
+			vmt.ops[i](vm)
+			if err := ctx.Err(); err != nil {
+				panic(err)
+			}
+		}
+	}); paniced != nil {
+		opErr := vmt.opErr
+		if opErr == nil {
+			opErr = errHalt
+		}
+		panicErr, ok := paniced.(error)
+		panicFail := !assert.True(t, ok, "expected a panic error, got %#v instead", paniced)
+		panicFail = panicFail || !assert.EqualError(t, panicErr, opErr.Error(), "expected panic error")
+		if panicFail {
+			t.Logf("Panic stack:\t%s", stack)
+		}
 	}
 }
 

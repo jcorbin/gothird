@@ -18,19 +18,25 @@ func (vm *VM) Run(ctx context.Context) error {
 		defer close(done)
 		defer func() {
 			e := recover()
-			if err, ok := e.(error); ok {
+			err, _ := e.(error)
+			if err != nil {
 				done <- err
 			} else if e != nil {
 				done <- fmt.Errorf("paniced: %v", e)
 			}
 		}()
-		vm.run()
+		vm.run(ctx)
 	}(done)
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case err := <-done:
-		return err
+		switch err {
+		case errHalt:
+			return nil
+		default:
+			return err
+		}
 	}
 }
 

@@ -108,7 +108,9 @@ func (nf nopFlusher) Flush() error { return nil }
 func (vm *VM) scan() string {
 	var sb strings.Builder
 	for {
-		if r, _, err := vm.in.ReadRune(); err != nil {
+		if r, _, err := vm.in.ReadRune(); err == io.EOF {
+			vm.halt(errHalt)
+		} else if err != nil {
 			vm.halt(err)
 		} else if !unicode.IsSpace(r) {
 			sb.WriteRune(r)
