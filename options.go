@@ -37,8 +37,17 @@ func withOutput(w io.Writer) outputOption   { return outputOption{w} }
 func withTee(w io.Writer) teeOption         { return teeOption{w} }
 func withMemLimit(limit int) memLimitOption { return memLimitOption(limit) }
 
+func withInputWriter(wto io.WriterTo) pipeInput {
+	r, w := io.Pipe()
+	go func() {
+		defer w.Close()
+		wto.WriteTo(w)
+	}()
+	return pipeInput{r, nameOf(wto)}
+}
+
 func (i inputOption) apply(vm *VM) {
-	vm.in = newRuneScanner(i.Reader)
+	vm.inQueue = append(vm.inQueue, i.Reader)
 }
 
 func (o outputOption) apply(vm *VM) {
@@ -54,4 +63,16 @@ func (o teeOption) apply(vm *VM) {
 
 func (lim memLimitOption) apply(vm *VM) {
 	vm.memLimit = int(lim)
+}
+
+type pipeInput struct {
+	*io.PipeReader
+	name string
+}
+
+func (pi pipeInput) Name() string { return pi.name }
+
+func (pi pipeInput) apply(vm *VM) {
+	vm.inQueue = append(vm.inQueue, pi)
+	vm.closers = append(vm.closers, pi)
 }

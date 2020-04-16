@@ -1,52 +1,70 @@
 package main
 
+import (
+	"bytes"
+	"io"
+	"strings"
+)
+
 //// Section 3: Building THIRD
+
+var thirdKernel = thirdSource{}
+
+type thirdSource struct{}
+
+func (thirdSource) Name() string { return "third.fs" }
 
 // In this section, I'm going to keep my conversation out here, rather than
 // using fake comments-- because we'll have real comments eventually.
-func setupThird(input func(string)) {
-	line := func(parts ...string) {
-		for _, s := range parts {
-			input(s)
+func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
+	flush := func(wto io.WriterTo) {
+		if err != nil {
+			return
 		}
-		input("\n")
+		var m int64
+		m, err = wto.WriteTo(w)
+		n += m
+	}
+
+	var buf bytes.Buffer
+	line := func(parts ...string) {
+		if err == nil {
+			for _, s := range parts {
+				buf.WriteString(s)
+			}
+			buf.WriteByte('\n')
+			flush(&buf)
+		}
 	}
 
 	// The first thing we have to do is give the symbols for our built-ins.
-	line(
-		":", "immediate", "_read",
-		"@", "!",
-		"-", "*", "/",
-		"<",
-		"exit",
-		"echo", "key",
-		"_pick")
+	line(`: immediate _read @ ! - * / <0 exit echo key pick`)
 
 	// Next we want to be mildly self commenting, so we define the word 'r' to
 	// push the *address of the return stack pointer* onto the stack--NOT the
 	// value of the return stack pointer.  (In fact, when we run r, the value
 	// of the return stack pointer is temporarily changed.)
-	line(": r 1 exit")
+	line(`: r 1 exit`)
 
 	// Next, we're currently executing a short loop that contains _read and
 	// recursion, which is slowly blowing up the return stack.  So let's define
 	// a new word, from which you can never return.  What it does is drops the
 	// top value off the return stack, calls _read, then calls itself.  Because
 	// it kills the top of the return stack, it can recurse indefinitely.
-	line(": ]",
-		"  r @",   // Get the value of the return stack pointer
-		"  1 -",   // Subtract one
-		"  r !",   // Store it back into the return stack pointer
-		"  _read", // Read and compile one word
-		"  ]")     // Start over
+	line(`: ]`,
+		`  r @`,   // Get the value of the return stack pointer
+		`  1 -`,   // Subtract one
+		`  r !`,   // Store it back into the return stack pointer
+		`  _read`, // Read and compile one word
+		`  ]`)     // Start over
 
 	// Notice that we don't need to exit, since we never come back. Also, it's
 	// possible that an immediate word may get run during _read, and that _read
 	// will never return!
 
 	// Now let's get compile running.
-	line(": main immediate ]")
-	line("main")
+	line(`: main immediate ]`)
+	line(`main`)
 
 	// Next off, I'm going to do this the easy but non-portable way, and put
 	// some character constant definitions in. I wanted them at the top of the
@@ -162,7 +180,7 @@ func setupThird(input func(string)) {
 		`  r @ !`,       // Write it over the current top of return stack
 		`  r @ 1 + r !`, // Increment the return stack pointer--but can't use inc
 		`  r @ !`,       // Store our return address back on the return stack
-		`;`)
+		` ;`)
 
 	// Next we want the opposite routine, which pops the top of the return
 	// stack, and puts it on the normal stack.
@@ -172,7 +190,7 @@ func setupThird(input func(string)) {
 		`  r @ @`,       // Get value that we want off
 		`  swap`,        // Bring return address to top
 		`  r @ !`,       // Store it and return
-		`;`)
+		` ;`)
 
 	// Now, if we have a routine that's recursing, and we want to be polite
 	// about the return stack, right before we recurse we can run { fromr drop
@@ -202,7 +220,7 @@ func setupThird(input func(string)) {
 		`  swap minus`, // Swap number back up, and take negative
 		`  0 <`,        // 1 if original was > 0, 0 otherwise
 		`  +`,          // Add them up--has to be 0 or 1!
-		`;`)
+		` ;`)
 
 	// not returns 1 if top of stack is 0, and 0 otherwise
 	line(`: not logical bnot ;`)
@@ -221,14 +239,14 @@ func setupThird(input func(string)) {
 		`  r @ @`, // Our return address again
 		`  +`,     // The address we want to execute at
 		`  r @ !`, // Store it back onto the return stack
-		`;`)
+		` ;`)
 
 	// For conditional branches, we want to branch by a certain amount if true,
 	// otherwise we want to skip over the branch offset constant--that is,
 	// branch by one.  Assuming that the top of the stack is the branch offset,
 	// and the second on the stack is 1 if we should branch, and 0 if not, the
 	// following computes the correct branch offset.
-	line(`// : computebranch 1 - * 1 + ;`)
+	line(`: computebranch 1 - * 1 + ;`)
 
 	// Branch if the value on top of the stack is 0.
 	line(`: notbranch`,
@@ -237,7 +255,7 @@ func setupThird(input func(string)) {
 		`  computebranch`, // Adjust as necessary
 		`  r @ @ +`,       // Calculate the new address
 		`  r @ !`,         // Store it
-		`;`)
+		` ;`)
 
 	// here is a standard FORTH word which returns a pointer to the current
 	// dictionary address--that is, the value of the dictionary pointer.
@@ -252,7 +270,7 @@ func setupThird(input func(string)) {
 		`  ' notbranch ,`, // Compile notbranch
 		`  here`,          // Save the current dictionary address
 		`  0 ,`,           // Compile a dummy value
-		`;`)
+		` ;`)
 
 	// then expects the address to fixup to be on the stack.
 	line(`: then immediate`,
@@ -260,7 +278,7 @@ func setupThird(input func(string)) {
 		`  here`,   // Find the current location, where to branch to
 		`  swap -`, // Calculate the difference between them
 		`  swap !`, // Bring the address to the top, and store it.
-		`;`)
+		` ;`)
 
 	// Now that we can do if...then statements, we can do some parsing!  Let's
 	// introduce real FORTH comments. find-) will scan the input until it finds
@@ -271,15 +289,15 @@ func setupThird(input func(string)) {
 		`  not if`,      // If it's not equal
 		`  tail find-)`, // repeat (popping R stack)
 		`  then`,        // Otherwise branch here and exit
-		`;`)
+		` ;`)
 
 	line(
 		`: ( immediate`,
 		`find-)`,
-		`;`)
+		` ;`)
 	line(`( we should be able to do FORTH-style comments now )`)
 
-	input(`
+	flush(strings.NewReader(`
 
 ( now that we've got comments, we can comment the rest of the code
   in a legitimate [self parsing] fashion.  Note that you can't
@@ -509,6 +527,7 @@ Ok.
 
 _welcome
 
-`)
+`))
 
+	return
 }

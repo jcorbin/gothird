@@ -18,6 +18,9 @@ func (vm *VM) halt(err error) {
 	case nil:
 		vm.logf("halt")
 		panic(errHalt)
+	case io.EOF:
+		vm.logf("halt EOF")
+		panic(errHalt)
 	default:
 		vm.logf("halt error: %v", err)
 		panic(err)
@@ -212,24 +215,31 @@ func (vm *VM) run(ctx context.Context) {
 	vm.exec(ctx)
 }
 
-func (vm *VM) scan() string {
+func (vm *VM) scan() (token string) {
+	defer func() {
+		line := vm.scanLine
+		if line.Len() == 0 {
+			line = vm.lastLine
+		}
+		vm.logf("scan %q from %v", token, line)
+	}()
+
 	var sb strings.Builder
 	for {
-		if r, _, err := vm.in.ReadRune(); err == io.EOF {
-			vm.halt(errHalt)
-		} else if err != nil {
-			vm.halt(err)
-		} else if !unicode.IsSpace(r) {
+		r, err := vm.readRune()
+		vm.haltif(err)
+		if !unicode.IsControl(r) && !unicode.IsSpace(r) {
 			sb.WriteRune(r)
 			break
 		}
 	}
 	for {
-		if r, _, err := vm.in.ReadRune(); err == io.EOF {
+		r, err := vm.readRune()
+		if err == io.EOF {
 			break
 		} else if err != nil {
 			vm.halt(err)
-		} else if unicode.IsSpace(r) {
+		} else if unicode.IsControl(r) || unicode.IsSpace(r) {
 			break
 		} else {
 			sb.WriteRune(r)

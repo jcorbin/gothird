@@ -112,9 +112,13 @@ func (vm *VM) echo() { vm.haltif(writeRune(vm.out, rune(vm.pop()))) }
 
 // Name    Function
 // key     read a rune from input onto top of stack
+
 func (vm *VM) key() {
-	r, _, err := vm.in.ReadRune()
-	vm.haltif(err)
+	r, err := vm.readRune()
+	for r == 0 {
+		vm.haltif(err)
+		r, err = vm.readRune()
+	}
 	vm.push(int(r))
 }
 

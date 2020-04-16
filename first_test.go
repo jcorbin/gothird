@@ -234,7 +234,7 @@ func Test_VM(t *testing.T) {
 			`@  95 : pick 13 10`,
 		)))
 
-	// FIXME describe
+	// better main loop
 	testCases = append(testCases, vmTest("new main").withInput(`
 		: immediate _read @ ! - * / < exit echo key pick
 
@@ -468,6 +468,11 @@ func (vmt vmTestCase) withMemLimit(limit int) vmTestCase {
 
 func (vmt vmTestCase) withInput(source string) vmTestCase {
 	vmt.opts = append(vmt.opts, WithInput(strings.NewReader(source)))
+	return vmt
+}
+
+func (vmt vmTestCase) withInputWriter(w io.WriterTo) vmTestCase {
+	vmt.opts = append(vmt.opts, WithInputWriter(w))
 	return vmt
 }
 

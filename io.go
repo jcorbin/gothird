@@ -2,16 +2,82 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"fmt"
 	"io"
 	"io/ioutil"
 )
 
+type inLine struct {
+	fileName string
+	number   int
+	bytes.Buffer
+}
+
+func (il inLine) String() string {
+	return fmt.Sprintf("%v:%v %q", il.fileName, il.number, il.Buffer.String())
+}
+
 type ioCore struct {
-	in  io.RuneScanner
+	in      io.RuneScanner
+	inQueue []io.Reader
+
+	lastLine inLine
+	scanLine inLine
+
 	out writeFlusher
 
-	logfn   func(mess string, args ...interface{})
+	logfn func(mess string, args ...interface{})
+
 	closers []io.Closer
+}
+
+func (ioc *ioCore) readRune() (rune, error) {
+	if ioc.in == nil && !ioc.nextIn() {
+		return 0, io.EOF
+	}
+
+	r, _, err := ioc.in.ReadRune()
+	if r == '\n' {
+		ioc.nextLine()
+	} else {
+		ioc.scanLine.WriteRune(r)
+	}
+
+	if r != 0 {
+		return r, nil
+	}
+	if err == io.EOF && ioc.nextIn() {
+		err = nil
+	}
+	return 0, err
+}
+
+func (ioc *ioCore) nextLine() {
+	ioc.lastLine.Reset()
+	ioc.lastLine.fileName = ioc.scanLine.fileName
+	ioc.lastLine.number = ioc.scanLine.number
+	ioc.lastLine.Write(ioc.scanLine.Bytes())
+	ioc.scanLine.Reset()
+	ioc.scanLine.number++
+}
+
+func (ioc *ioCore) nextIn() bool {
+	ioc.nextLine()
+	if ioc.in != nil {
+		if cl, ok := ioc.in.(io.Closer); ok {
+			cl.Close()
+		}
+		ioc.in = nil
+	}
+	if len(ioc.inQueue) > 0 {
+		r := ioc.inQueue[0]
+		ioc.inQueue = ioc.inQueue[1:]
+		ioc.in = newRuneScanner(r)
+		ioc.scanLine.fileName = nameOf(r)
+		ioc.scanLine.number = 1
+	}
+	return ioc.in != nil
 }
 
 func (ioc *ioCore) withLogPrefix(prefix string) func() {
@@ -147,4 +213,11 @@ func multiWriteFlusher(a, b writeFlusher) writeFlusher {
 	default:
 		return wfs
 	}
+}
+
+func nameOf(obj interface{}) string {
+	if nom, ok := obj.(interface{ Name() string }); ok {
+		return nom.Name()
+	}
+	return fmt.Sprintf("<unnamed %T>", obj)
 }
