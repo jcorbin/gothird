@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
+	"strings"
+	"unicode"
 )
 
 func (vm *VM) halt(err error) {
@@ -207,6 +210,32 @@ func (vm *VM) run(ctx context.Context) {
 	// run the entry point
 	vm.prog = entry
 	vm.exec(ctx)
+}
+
+func (vm *VM) scan() string {
+	var sb strings.Builder
+	for {
+		if r, _, err := vm.in.ReadRune(); err == io.EOF {
+			vm.halt(errHalt)
+		} else if err != nil {
+			vm.halt(err)
+		} else if !unicode.IsSpace(r) {
+			sb.WriteRune(r)
+			break
+		}
+	}
+	for {
+		if r, _, err := vm.in.ReadRune(); err == io.EOF {
+			break
+		} else if err != nil {
+			vm.halt(err)
+		} else if unicode.IsSpace(r) {
+			break
+		} else {
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
 }
 
 var (

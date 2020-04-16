@@ -8,17 +8,12 @@ import (
 
 type VMOption interface{ apply(vm *VM) }
 
-var defaults = []VMOption{
+var defaultOptions = []VMOption{
 	withInput(bytes.NewReader(nil)),
 	withOutput(ioutil.Discard),
 }
 
 func (vm *VM) apply(opts ...VMOption) {
-	for _, opt := range defaults {
-		if opt != nil {
-			opt.apply(vm)
-		}
-	}
 	for _, opt := range opts {
 		if opt != nil {
 			opt.apply(vm)

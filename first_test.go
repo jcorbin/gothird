@@ -570,10 +570,8 @@ func (vmt vmTestCase) withTestHexOutput() vmTestCase {
 func (vmt vmTestCase) run(t *testing.T) {
 	const defaultMemLimit = 4 * 1024
 	var vm VM
+	vm.apply(vmt.opts...)
 
-	for _, opt := range vmt.opts {
-		opt.apply(&vm)
-	}
 	for _, setup := range vmt.setup {
 		setup(t, &vm)
 	}

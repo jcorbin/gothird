@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"io"
 	"io/ioutil"
-	"strings"
-	"unicode"
 )
 
 type ioCore struct {
@@ -104,32 +102,6 @@ func newWriteFlusher(w io.Writer) writeFlusher {
 type nopFlusher struct{ io.Writer }
 
 func (nf nopFlusher) Flush() error { return nil }
-
-func (vm *VM) scan() string {
-	var sb strings.Builder
-	for {
-		if r, _, err := vm.in.ReadRune(); err == io.EOF {
-			vm.halt(errHalt)
-		} else if err != nil {
-			vm.halt(err)
-		} else if !unicode.IsSpace(r) {
-			sb.WriteRune(r)
-			break
-		}
-	}
-	for {
-		if r, _, err := vm.in.ReadRune(); err == io.EOF {
-			break
-		} else if err != nil {
-			vm.halt(err)
-		} else if unicode.IsSpace(r) {
-			break
-		} else {
-			sb.WriteRune(r)
-		}
-	}
-	return sb.String()
-}
 
 type writeFlushers []writeFlusher
 
