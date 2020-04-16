@@ -197,7 +197,7 @@ func Test_VM(t *testing.T) {
 		expectMemAt(32, 0, 0, vmCodeRun, vmCodeRead, 35, vmCodeExit).
 		expectMemAt(38, 32, 1, vmCodeDefine, vmCodeExit).
 		expectMemAt(42, 38, 2, vmCodeImmediate, vmCodeExit).
-		expectMemAt(46, 42, 3, vmCodeCompile, vmCodeRead, vmCodeExit).
+		expectMemAt(46, 42, 3, vmCodeCompIt, vmCodeRead, vmCodeExit).
 		expectDump(lines(
 			`prog: 36`,
 			`dict: [95 90 85 81 76 71 66 61 56 51 46 42 38 32]`,
@@ -252,21 +252,16 @@ func Test_VM(t *testing.T) {
 		14,
 		vmCodeCompile,
 		vmCodeRun,
-		vmCodePushint, 1, 54, // vmCodeGet,
-		vmCodePushint, 1, 64, // vmCodeSub,
-		vmCodePushint, 1, 59, // vmCodeSet,
-		49, // vmCodeRead,
+		vmCodePushint, 1, vmCodeGet,
+		vmCodePushint, 1, vmCodeSub,
+		vmCodePushint, 1, vmCodeSet,
+		vmCodeRead,
 		104,
-	).expectMemAt(115,
-		100,
-		15,
-		vmCodeRun,
-		104,
-	).withTestLog().expectMemAt(115, 100, 15, vmCodeRun, 104).expectDump(lines(
-		`prog: 36`,
+	).expectMemAt(115, 100, 15, vmCodeRun, 104).withTestLog().expectDump(lines(
+		`prog: 114`,
 		`dict: [115 100 95 90 85 81 76 71 66 61 56 51 46 42 38 32]`,
 		`stack: []`,
-		`@   0 117 dict`,
+		`@   0 119 dict`,
 		`@   1 29 ret`,
 		`@   2 0`,
 		`@   3 0`,
@@ -294,7 +289,7 @@ func Test_VM(t *testing.T) {
 		`@  25 37 ret_9`,
 		`@  26 37 ret_10`,
 		`@  27 37 ret_11`,
-		`@  28 37 ret_12`,
+		`@  28 36 ret_12`,
 		`@  32 immediate 14 3 35 10`,
 		`@  38 : : immediate 1 10`,
 		`@  42 : immediate immediate 2 10`,
@@ -309,7 +304,7 @@ func Test_VM(t *testing.T) {
 		`@  85 : echo 11 10`,
 		`@  90 : key 12 10`,
 		`@  95 : pick 13 10`,
-		`@ 100 : ] 14 15 1 54 15 1 64 15 1 59 49 104`,
+		`@ 100 : ] 14 15 1 4 15 1 6 15 1 5 3 104`,
 		`@ 115 : main immediate 14 104`,
 	)))
 
@@ -774,13 +769,14 @@ func (vm *vmDumper) describeWord(addr uint) (uint, string) {
 	}
 	addr++
 
-	if code := uint(vm.mem[addr]); code != vmCodeCompile {
+	switch code := uint(vm.mem[addr]); code {
+	case vmCodeCompile, vmCodeCompIt:
+		addr++
+	default:
 		if sb.Len() > 0 {
 			sb.WriteByte(' ')
 		}
 		sb.WriteString("immediate")
-	} else {
-		addr++
 	}
 
 	next := vm.nextWord()

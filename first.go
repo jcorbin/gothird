@@ -231,6 +231,19 @@ func (vm *VM) compileme() {
 	vm.exit()
 }
 
+func (vm *VM) compileit() {
+	code := vm.loadProg()
+	for {
+		vm.compile(code)
+		next := vm.loadProg()
+		if code == vmCodeExit || next == vmCodeExit {
+			vm.exit()
+			return
+		}
+		code = next
+	}
+}
+
 // The third is "run me"--the word's data field is taken to be a stream of
 // pointers to words, and is executed.
 func (vm *VM) runme() {}
@@ -271,6 +284,7 @@ const (
 
 	vmCodeRun     // <INTERNAL>  run at the program counter
 	vmCodePushint // <INTERNAL>  push from memory at program counter
+	vmCodeCompIt  // <INTERNAL>  compile from memory at program counter
 
 	vmCodeMax
 	vmCodeLastBuiltin = vmCodePick
@@ -279,11 +293,12 @@ const (
 func (vm *VM) compileBuiltins() {
 	for code := vmCodeDefine; code <= vmCodeLastBuiltin; code++ {
 		vm.define()
+		vm.mem[vm.last+2] = vmCodeCompIt // compile inline
 		if code <= vmCodeImmediate {
 			vm.immediate()
 		}
 		vm.compile(code)
-		vm.immediate() // write the builtin code over the "runme" token with
+		vm.immediate() // write the builtin token over the prior vmCodeRun
 		if code != vmCodeExit {
 			vm.compile(vmCodeExit)
 		}
@@ -313,6 +328,7 @@ func init() {
 
 		(*VM).runme,
 		(*VM).pushint,
+		(*VM).compileit,
 	}
 
 	vmCodeNames = [...]string{
@@ -334,6 +350,7 @@ func init() {
 
 		"runme",
 		"pushint",
+		"compileit",
 	}
 }
 
