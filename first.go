@@ -87,7 +87,7 @@ func (vm *VM) div() { b, a := vm.pop(), vm.pop(); vm.push(a / b) }
 
 // Symbol   Name           Function
 //   <0     less than 0    pop top element of stack, push 1 if < 0 else 0
-func (vm *VM) less() { a := vm.pop(); vm.push(boolInt(a < 0)) }
+func (vm *VM) under0() { a := vm.pop(); vm.push(boolInt(a < 0)) }
 
 // Note that we can synthesize addition and negation from binary minus, but we
 // cannot synthesize a time efficient divide or multiply from it. <0 is
@@ -324,7 +324,7 @@ func init() {
 		(*VM).sub,
 		(*VM).mul,
 		(*VM).div,
-		(*VM).less,
+		(*VM).under0,
 		(*VM).exit,
 		(*VM).echo,
 		(*VM).key,
@@ -346,7 +346,7 @@ func init() {
 		"sub",
 		"mul",
 		"div",
-		"less",
+		"under0",
 		"exit",
 		"echo",
 		"key",

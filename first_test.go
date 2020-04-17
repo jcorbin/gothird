@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -32,7 +33,7 @@ func Test_VM(t *testing.T) {
 		sub       = (*VM).sub
 		mul       = (*VM).mul
 		div       = (*VM).div
-		less      = (*VM).less
+		under0    = (*VM).under0
 		exit      = (*VM).exit
 		echo      = (*VM).echo
 		key       = (*VM).key
@@ -47,8 +48,8 @@ func Test_VM(t *testing.T) {
 		vmTest("mul").withStack(11, 5, 6).do(mul).expectStack(11, 30),
 
 		// is top of stack less than 0?
-		vmTest("less true").withStack(2, -3).do(less).expectStack(2, 1),
-		vmTest("less false").withStack(2, 3).do(less).expectStack(2, 0),
+		vmTest("less true").withStack(2, -3).do(under0).expectStack(2, 1),
+		vmTest("less false").withStack(2, 3).do(under0).expectStack(2, 0),
 
 		// pop top of stack, use as index into stack and copy up that element
 		vmTest("pick 0").withStack(1, 2, 3, 4, 5, 0).do(pick).expectStack(1, 2, 3, 4, 5, 5),
@@ -192,7 +193,7 @@ func Test_VM(t *testing.T) {
 	)
 
 	testCases = append(testCases, vmTest("builtin setup").withInput(`
-		: immediate _read @ ! - * / < exit echo key pick
+		: immediate _read @ ! - * / <0 exit echo key pick
 	`).
 		expectMemAt(32, 0, 0, vmCodeRun, vmCodeRead, 35, vmCodeExit).
 		expectMemAt(38, 32, 1, vmCodeDefine, vmCodeExit).
@@ -218,25 +219,25 @@ func Test_VM(t *testing.T) {
 			`@  13 0`,
 			`@  14 0`,
 			`@  15 0`,
-			`@  32 immediate 14 3 35 10`,
-			`@  38 : : immediate 1 10`,
-			`@  42 : immediate immediate 2 10`,
-			`@  46 : _read 3 10`,
-			`@  51 : @ 4 10`,
-			`@  56 : ! 5 10`,
-			`@  61 : - 6 10`,
-			`@  66 : * 7 10`,
-			`@  71 : / 8 10`,
-			`@  76 : < 9 10`,
-			`@  81 : exit 10`,
-			`@  85 : echo 11 10`,
-			`@  90 : key 12 10`,
-			`@  95 : pick 13 10`,
+			`@  32 : ø immediate runme read ø+3 exit`,
+			`@  38 : : immediate define exit`,
+			`@  42 : immediate immediate immediate exit`,
+			`@  46 : _read read exit`,
+			`@  51 : @ get exit`,
+			`@  56 : ! set exit`,
+			`@  61 : - sub exit`,
+			`@  66 : * mul exit`,
+			`@  71 : / div exit`,
+			`@  76 : <0 under0 exit`,
+			`@  81 : exit exit`,
+			`@  85 : echo echo exit`,
+			`@  90 : key key exit`,
+			`@  95 : pick pick exit`,
 		)))
 
 	// better main loop
 	testCases = append(testCases, vmTest("new main").withInput(`
-		: immediate _read @ ! - * / < exit echo key pick
+		: immediate _read @ ! - * / <0 exit echo key pick
 
 		: ]
 			1 @
@@ -290,22 +291,22 @@ func Test_VM(t *testing.T) {
 		`@  26 37 ret_10`,
 		`@  27 37 ret_11`,
 		`@  28 36 ret_12`,
-		`@  32 immediate 14 3 35 10`,
-		`@  38 : : immediate 1 10`,
-		`@  42 : immediate immediate 2 10`,
-		`@  46 : _read 3 10`,
-		`@  51 : @ 4 10`,
-		`@  56 : ! 5 10`,
-		`@  61 : - 6 10`,
-		`@  66 : * 7 10`,
-		`@  71 : / 8 10`,
-		`@  76 : < 9 10`,
-		`@  81 : exit 10`,
-		`@  85 : echo 11 10`,
-		`@  90 : key 12 10`,
-		`@  95 : pick 13 10`,
-		`@ 100 : ] 14 15 1 4 15 1 6 15 1 5 3 104`,
-		`@ 115 : main immediate 14 104`,
+		`@  32 : ø immediate runme read ø+3 exit`,
+		`@  38 : : immediate define exit`,
+		`@  42 : immediate immediate immediate exit`,
+		`@  46 : _read read exit`,
+		`@  51 : @ get exit`,
+		`@  56 : ! set exit`,
+		`@  61 : - sub exit`,
+		`@  66 : * mul exit`,
+		`@  71 : / div exit`,
+		`@  76 : <0 under0 exit`,
+		`@  81 : exit exit`,
+		`@  85 : echo echo exit`,
+		`@  90 : key key exit`,
+		`@  95 : pick pick exit`,
+		`@ 100 : ] runme pushint(1) get pushint(1) sub pushint(1) set read ]+4`,
+		`@ 115 : main immediate runme ]+4`,
 	)))
 
 	/*
@@ -682,123 +683,143 @@ func (vm *vmDumper) dumpMem() {
 		vm.scanWords()
 	}
 	vm.wordID = len(vm.words) - 1
+	var sb strings.Builder
 	for addr := uint(0); addr < uint(len(vm.mem)); {
-		next, desc := vm.describe(addr)
-		if desc != "" {
-			vm.addrf(addr, desc)
+		sb.Reset()
+		fmt.Fprintf(&sb, "@% *v ", vm.addrWidth, addr)
+		n := sb.Len()
+
+		addr = vm.formatMem(&sb, addr)
+		if sb.Len() != n {
+			vm.printf(sb.String())
 		}
-		addr = next
 	}
 }
 
-func (vm *vmDumper) describe(addr uint) (next uint, desc string) {
-	for _, fn := range []func(addr uint) (next uint, desc string){
-		vm.describeLow,
-		vm.describeRet,
-		vm.describeWord,
-		vm.describeMem,
-	} {
-		if next, desc := fn(addr); next > addr {
-			return next, desc
-		}
-	}
-	return addr, ""
+type fmtBuf interface {
+	Len() int
+	Write(p []byte) (n int, err error)
+	WriteByte(c byte) error
+	WriteRune(r rune) (n int, err error)
+	WriteString(s string) (n int, err error)
 }
 
-func (vm *vmDumper) describeLow(addr uint) (uint, string) {
-	var sb strings.Builder
-	sb.Grow(32)
+func (vm *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
 	val := vm.mem[addr]
-	sb.WriteString(strconv.Itoa(val))
-	switch addr {
-	case 0:
-		sb.WriteString(" dict")
-	case 1:
-		sb.WriteString(" ret")
-	case 10:
-		sb.WriteString(" retBase")
-	case 11:
-		sb.WriteString(" memBase")
-	default:
-		if addr > 11 {
-			retBase := uint(vm.mem[10])
-			if retBase != 0 && addr >= retBase {
-				return addr, ""
-			}
-			memBase := uint(vm.mem[11])
-			if memBase != 0 && addr >= memBase {
-				return addr, ""
-			}
-			if retBase == 0 && val == 0 {
-				return addr, ""
-			}
-		}
-	}
-	return addr + 1, sb.String()
-}
 
-func (vm *vmDumper) describeRet(addr uint) (uint, string) {
-	if memBase := uint(vm.mem[11]); addr >= memBase {
-		return addr, ""
+	// low memory addresses
+	if addr <= 11 {
+		buf.WriteString(strconv.Itoa(val))
+		switch addr {
+		case 0:
+			buf.WriteString(" dict")
+		case 1:
+			buf.WriteString(" ret")
+		case 10:
+			buf.WriteString(" retBase")
+		case 11:
+			buf.WriteString(" memBase")
+		}
+		return addr + 1
 	}
+
+	// other pre-return-stack addresses
 	retBase := uint(vm.mem[10])
-	var sb strings.Builder
-	sb.Grow(32)
-	sb.WriteString(strconv.Itoa(vm.mem[addr]))
-	sb.WriteString(" ret_")
-	sb.WriteString(strconv.Itoa(int(addr - retBase)))
-	if addr >= uint(vm.mem[1]) {
-		return addr + 1, ""
-	}
-	return addr + 1, sb.String()
-}
-
-func (vm *vmDumper) describeWord(addr uint) (uint, string) {
-	word := vm.word()
-	if word == 0 {
-		return addr, ""
+	if addr < retBase {
+		buf.WriteString(strconv.Itoa(val))
+		return addr + 1
 	}
 
-	if addr != word {
-		return addr, ""
-	}
-
-	var sb strings.Builder
-	addr++
-
-	if name := uint(vm.mem[addr]); name != 0 {
-		sb.WriteString(": ")
-		sb.WriteString(vm.string(name))
-	}
-	addr++
-
-	switch code := uint(vm.mem[addr]); code {
-	case vmCodeCompile, vmCodeCompIt:
-		addr++
-	default:
-		if sb.Len() > 0 {
-			sb.WriteByte(' ')
+	// return stack addresses
+	memBase := uint(vm.mem[11])
+	if addr < memBase {
+		if r := uint(vm.mem[1]); addr < r {
+			buf.WriteString(strconv.Itoa(vm.mem[addr]))
+			buf.WriteString(" ret_")
+			buf.WriteString(strconv.Itoa(int(addr - retBase)))
 		}
-		sb.WriteString("immediate")
+		return addr + 1
 	}
 
-	next := vm.nextWord()
-	if next == 0 {
-		next = uint(vm.mem[0])
-	}
-	for ; addr < next; addr++ {
-		sb.WriteByte(' ')
-		sb.WriteString(strconv.Itoa(vm.mem[addr]))
+	// dictionary words
+	if word := vm.word(); word != 0 && addr == word {
+		buf.WriteString(": ")
+		addr++
+
+		if name := uint(vm.mem[addr]); name != 0 {
+			buf.WriteString(vm.string(name))
+		} else {
+			buf.WriteRune('ø')
+		}
+		addr++
+
+		switch code := uint(vm.mem[addr]); code {
+		case vmCodeCompile, vmCodeCompIt:
+			addr++
+		default:
+			buf.WriteByte(' ')
+			buf.WriteString("immediate")
+		}
+
+		nextWord := vm.nextWord()
+		if nextWord == 0 {
+			nextWord = uint(vm.mem[0])
+		}
+		for addr < nextWord {
+			buf.WriteByte(' ')
+			if nextAddr := vm.formatCode(buf, addr); nextAddr > addr {
+				addr = nextAddr
+				continue
+			}
+			break
+		}
+		return addr
 	}
 
-	return addr, sb.String()
+	// other memory ranges
+	if val != 0 {
+		buf.WriteString(strconv.Itoa(val))
+	}
+
+	return addr + 1
 }
 
-func (vm *vmDumper) describeMem(addr uint) (next uint, desc string) {
-	if val := vm.mem[addr]; val != 0 {
-		desc = fmt.Sprintf("%v", val)
+func (vm *vmDumper) formatCode(buf fmtBuf, addr uint) uint {
+	code := vm.mem[addr]
+	addr++
+
+	// builtin code
+	if code < vmCodeMax {
+		buf.WriteString(vmCodeNames[code])
+		if code == vmCodePushint {
+			buf.WriteByte('(')
+			buf.WriteString(strconv.Itoa(vm.mem[addr]))
+			buf.WriteByte(')')
+			addr++
+		}
+		return addr
 	}
-	return addr + 1, desc
+
+	// call to word+offset
+	if i := sort.Search(len(vm.words), func(i int) bool {
+		return vm.words[i] < uint(code)
+	}); i < len(vm.words) {
+		word := vm.words[i]
+		if name := uint(vm.mem[word]); name != 0 {
+			buf.WriteString(vm.string(name))
+		} else {
+			buf.WriteRune('ø')
+		}
+		if offset := uint(code) - word; offset > 0 {
+			buf.WriteByte('+')
+			buf.WriteString(strconv.Itoa(int(offset)))
+		}
+		return addr
+	}
+
+	// call to unknown address
+	buf.WriteString(strconv.Itoa(code))
+	return addr
 }
 
 func (vm *vmDumper) scanWords() {
@@ -823,13 +844,6 @@ func (vm *vmDumper) nextWord() uint {
 		vm.wordID--
 	}
 	return vm.word()
-}
-
-func (vm *vmDumper) addrf(addr uint, desc string, args ...interface{}) {
-	if len(args) > 0 {
-		desc = fmt.Sprintf(desc, args...)
-	}
-	vm.printf("@% *v %v", vm.addrWidth, addr, desc)
 }
 
 func lines(parts ...string) string {
