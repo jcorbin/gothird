@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -555,7 +557,10 @@ func (vmt vmTestCase) expectOutput(output string) vmTestCase {
 func (vmt vmTestCase) expectDump(dump string) vmTestCase {
 	var out strings.Builder
 	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		dumpVM(vm, (&lineLogger{Writer: &out}).printf)
+		vmDumper{
+			vm:  vm,
+			out: &out,
+		}.dump()
 		assert.Equal(t, dump, out.String(), "expected dump")
 	})
 	return vmt
@@ -570,16 +575,20 @@ func (vmt vmTestCase) withTestLog() vmTestCase {
 
 func (vmt vmTestCase) withTestOutput() vmTestCase {
 	vmt.setup = append(vmt.setup, func(t *testing.T, vm *VM) {
-		WithTee(logWriter{"out: ", t.Logf}).apply(vm)
+		lw := &logWriter{prefix: "out: ", logf: t.Logf}
+		vm.closers = append(vm.closers, lw)
+		WithTee(lw).apply(vm)
 	})
 	return vmt
 }
 
 func (vmt vmTestCase) withTestHexOutput() vmTestCase {
 	vmt.setup = append(vmt.setup, func(t *testing.T, vm *VM) {
-		enc := hex.Dumper(logWriter{"out: ", t.Logf})
+		lw := &logWriter{prefix: "out: ", logf: t.Logf}
+		enc := hex.Dumper(lw)
 		WithTee(enc).apply(vm)
 		vm.closers = append(vm.closers, enc)
+		vm.closers = append(vm.closers, lw)
 	})
 	return vmt
 }
@@ -623,8 +632,14 @@ func (vmt vmTestCase) run(t *testing.T) {
 
 	defer func() {
 		if t.Failed() {
-			t.Logf("VM dump:")
-			dumpVM(&vm, t.Logf)
+			// t.Logf("VM dump:")
+			lw := &logWriter{prefix: "fail_dump: ", logf: t.Logf}
+			vmDumper{
+				vm:       &vm,
+				out:      lw,
+				rawWords: true,
+			}.dump()
+			lw.Close()
 		}
 	}()
 
@@ -676,50 +691,50 @@ func (vmt vmTestCase) runOps(ctx context.Context, t *testing.T, vm *VM) {
 //// utilities
 
 type vmDumper struct {
-	*VM
-	printf    func(string, ...interface{})
+	vm  *VM
+	out io.Writer
+
 	addrWidth int
 	words     []uint
 	wordID    int
+
+	rawWords bool
 }
 
-func dumpVM(VM *VM, printf func(string, ...interface{})) {
-	var dump vmDumper
-	dump.VM = VM
-	dump.printf = printf
-	dump.printf("prog: %v", dump.prog)
+func (dump vmDumper) dump() {
+	fmt.Fprintf(dump.out, "prog: %v\n", dump.vm.prog)
 
 	dump.scanWords()
-	dump.printf("dict: %v", dump.words)
+	fmt.Fprintf(dump.out, "dict: %v\n", dump.words)
 
 	dump.dumpStack()
 	dump.dumpMem()
 }
 
-func (vm *vmDumper) dumpStack() {
-	vm.printf("stack: %v", vm.stack)
+func (dump *vmDumper) dumpStack() {
+	fmt.Fprintf(dump.out, "stack: %v\n", dump.vm.stack)
 }
 
-func (vm *vmDumper) dumpMem() {
-	if vm.addrWidth == 0 {
-		vm.addrWidth = 1
-		for n := len(vm.mem); n > 0; n /= 10 {
-			vm.addrWidth++
-		}
+func (dump *vmDumper) dumpMem() {
+	if dump.addrWidth == 0 {
+		dump.addrWidth = radixWidth(len(dump.vm.mem), 10) + 1
 	}
-	if vm.words == nil {
-		vm.scanWords()
+	if dump.words == nil {
+		dump.scanWords()
 	}
-	vm.wordID = len(vm.words) - 1
-	var sb strings.Builder
-	for addr := uint(0); addr < uint(len(vm.mem)); {
-		sb.Reset()
-		fmt.Fprintf(&sb, "@% *v ", vm.addrWidth, addr)
-		n := sb.Len()
+	dump.wordID = len(dump.words) - 1
+	var buf bytes.Buffer
+	for addr := uint(0); addr < uint(len(dump.vm.mem)); {
+		buf.Reset()
+		fmt.Fprintf(&buf, "@% *v ", dump.addrWidth, addr)
+		n := buf.Len()
 
-		addr = vm.formatMem(&sb, addr)
-		if sb.Len() != n {
-			vm.printf(sb.String())
+		addr = dump.formatMem(&buf, addr)
+		if buf.Len() != n {
+			if b := buf.Bytes(); b[len(b)-1] != '\n' {
+				buf.WriteByte('\n')
+			}
+			buf.WriteTo(dump.out)
 		}
 	}
 }
@@ -732,8 +747,8 @@ type fmtBuf interface {
 	WriteString(s string) (n int, err error)
 }
 
-func (vm *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
-	val := vm.mem[addr]
+func (dump *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
+	val := dump.vm.mem[addr]
 
 	// low memory addresses
 	if addr <= 11 {
@@ -752,17 +767,17 @@ func (vm *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
 	}
 
 	// other pre-return-stack addresses
-	retBase := uint(vm.mem[10])
+	retBase := uint(dump.vm.mem[10])
 	if addr < retBase {
 		buf.WriteString(strconv.Itoa(val))
 		return addr + 1
 	}
 
 	// return stack addresses
-	memBase := uint(vm.mem[11])
+	memBase := uint(dump.vm.mem[11])
 	if addr < memBase {
-		if r := uint(vm.mem[1]); addr < r {
-			buf.WriteString(strconv.Itoa(vm.mem[addr]))
+		if r := uint(dump.vm.mem[1]); addr < r {
+			buf.WriteString(strconv.Itoa(dump.vm.mem[addr]))
 			buf.WriteString(" ret_")
 			buf.WriteString(strconv.Itoa(int(addr - retBase)))
 		}
@@ -770,18 +785,15 @@ func (vm *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
 	}
 
 	// dictionary words
-	if word := vm.word(); word != 0 && addr == word {
+	if word := dump.word(); word != 0 && addr == word {
+
 		buf.WriteString(": ")
 		addr++
 
-		if name := uint(vm.mem[addr]); name != 0 {
-			buf.WriteString(vm.string(name))
-		} else {
-			buf.WriteRune('ø')
-		}
+		dump.formatName(buf, dump.vm.mem[addr])
 		addr++
 
-		switch code := uint(vm.mem[addr]); code {
+		switch code := uint(dump.vm.mem[addr]); code {
 		case vmCodeCompile, vmCodeCompIt:
 			addr++
 		default:
@@ -789,18 +801,23 @@ func (vm *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
 			buf.WriteString("immediate")
 		}
 
-		nextWord := vm.nextWord()
+		nextWord := dump.nextWord()
 		if nextWord == 0 {
-			nextWord = uint(vm.mem[0])
+			nextWord = uint(dump.vm.mem[0])
 		}
 		for addr < nextWord {
 			buf.WriteByte(' ')
-			if nextAddr := vm.formatCode(buf, addr); nextAddr > addr {
+			if nextAddr := dump.formatCode(buf, addr); nextAddr > addr {
 				addr = nextAddr
 				continue
 			}
 			break
 		}
+
+		if dump.rawWords {
+			fmt.Fprintf(buf, "\n % *v %v", dump.addrWidth, "", dump.vm.mem[word:addr])
+		}
+
 		return addr
 	}
 
@@ -812,8 +829,8 @@ func (vm *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
 	return addr + 1
 }
 
-func (vm *vmDumper) formatCode(buf fmtBuf, addr uint) uint {
-	code := vm.mem[addr]
+func (dump *vmDumper) formatCode(buf fmtBuf, addr uint) uint {
+	code := dump.vm.mem[addr]
 	addr++
 
 	// builtin code
@@ -821,7 +838,7 @@ func (vm *vmDumper) formatCode(buf fmtBuf, addr uint) uint {
 		buf.WriteString(vmCodeNames[code])
 		if code == vmCodePushint {
 			buf.WriteByte('(')
-			buf.WriteString(strconv.Itoa(vm.mem[addr]))
+			buf.WriteString(strconv.Itoa(dump.vm.mem[addr]))
 			buf.WriteByte(')')
 			addr++
 		}
@@ -829,15 +846,11 @@ func (vm *vmDumper) formatCode(buf fmtBuf, addr uint) uint {
 	}
 
 	// call to word+offset
-	if i := sort.Search(len(vm.words), func(i int) bool {
-		return vm.words[i] < uint(code)
-	}); i < len(vm.words) {
-		word := vm.words[i]
-		if name := uint(vm.mem[word]); name != 0 {
-			buf.WriteString(vm.string(name))
-		} else {
-			buf.WriteRune('ø')
-		}
+	if i := sort.Search(len(dump.words), func(i int) bool {
+		return dump.words[i] < uint(code)
+	}); i < len(dump.words) {
+		word := dump.words[i]
+		dump.formatName(buf, dump.vm.mem[word+1])
 		if offset := uint(code) - word; offset > 0 {
 			buf.WriteByte('+')
 			buf.WriteString(strconv.Itoa(int(offset)))
@@ -850,32 +863,65 @@ func (vm *vmDumper) formatCode(buf fmtBuf, addr uint) uint {
 	return addr
 }
 
-func (vm *vmDumper) scanWords() {
-	for word := vm.last; word != 0; {
-		if word >= uint(len(vm.mem)) {
-			return
-		}
-		vm.words = append(vm.words, word)
-		word = uint(vm.mem[word])
+func (dump *vmDumper) formatName(buf fmtBuf, sym int) {
+	if sym == 0 {
+		buf.WriteRune('ø')
+	} else if nameStr := dump.vm.string(uint(sym)); nameStr != "" {
+		buf.WriteString(nameStr)
+	} else {
+		fmt.Fprintf(buf, "UNDEFINED_NAME_%v", sym)
 	}
 }
 
-func (vm *vmDumper) word() uint {
-	if vm.wordID >= 0 {
-		return vm.words[vm.wordID]
+func (dump *vmDumper) scanWords() {
+	for word := dump.vm.last; word != 0; {
+		if word >= uint(len(dump.vm.mem)) {
+			return
+		}
+		dump.words = append(dump.words, word)
+		word = uint(dump.vm.mem[word])
+	}
+}
+
+func (dump *vmDumper) word() uint {
+	if dump.wordID >= 0 {
+		return dump.words[dump.wordID]
 	}
 	return 0
 }
 
-func (vm *vmDumper) nextWord() uint {
-	if vm.wordID >= 0 {
-		vm.wordID--
+func (dump *vmDumper) nextWord() uint {
+	if dump.wordID >= 0 {
+		dump.wordID--
 	}
-	return vm.word()
+	return dump.word()
+}
+
+func radixWidth(n, radix int) int {
+	w := 1
+	for n > radix {
+		w++
+		n /= radix
+	}
+	return w
+}
+
+func Test_radixWidth(t *testing.T) {
+	for _, tc := range []struct {
+		n, w int
+	}{
+		{w: 1, n: 0},
+		{w: 1, n: 1},
+		{w: 1, n: 5},
+		{w: 2, n: 50},
+		{w: 3, n: 300},
+	} {
+		assert.Equal(t, tc.w, radixWidth(tc.n, 10), "width(%v, 10) = %v", tc.n, tc.w)
+	}
 }
 
 func lines(parts ...string) string {
-	return strings.Join(parts, "\n")
+	return strings.Join(parts, "\n") + "\n"
 }
 
 func withTimeout(ctx context.Context, timeout time.Duration, f func(ctx context.Context)) {
@@ -886,12 +932,39 @@ func withTimeout(ctx context.Context, timeout time.Duration, f func(ctx context.
 
 type logWriter struct {
 	prefix string
-	printf func(string, ...interface{})
+	logf   func(string, ...interface{})
+
+	mu  sync.Mutex
+	buf bytes.Buffer
 }
 
-func (lw logWriter) Write(p []byte) (n int, err error) {
-	lw.printf("%s%s", lw.prefix, p)
+func (lw *logWriter) Write(p []byte) (n int, err error) {
+	lw.mu.Lock()
+	defer lw.mu.Unlock()
+	lw.buf.Write(p)
+	lw.flushLines()
 	return len(p), nil
+}
+
+func (lw *logWriter) Close() error {
+	lw.mu.Lock()
+	defer lw.mu.Unlock()
+	lw.flushLines()
+	if n := lw.buf.Len(); n > 0 {
+		lw.logf("%s%s", lw.prefix, lw.buf.Next(n))
+	}
+	return nil
+}
+
+func (lw *logWriter) flushLines() {
+	for {
+		i := bytes.IndexByte(lw.buf.Bytes(), '\n')
+		if i < 0 {
+			break
+		}
+		lw.logf("%s%s", lw.prefix, lw.buf.Next(i))
+		lw.buf.Next(1)
+	}
 }
 
 type lineLogger struct {
