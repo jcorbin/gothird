@@ -361,15 +361,19 @@ func (f optFunc) apply(vm *VM) { f(vm) }
 
 type vmTestCase struct {
 	name   string
-	opts   []VMOption
+	opts   []interface{}
 	setup  []func(t *testing.T, vm *VM)
 	ops    []func(vm *VM)
 	opErr  error
 	expect []func(t *testing.T, vm *VM)
+
+	nextInputID int
 }
 
 func (vmt vmTestCase) withOptions(opts ...VMOption) vmTestCase {
-	vmt.opts = append(vmt.opts, opts...)
+	for _, opt := range opts {
+		vmt.opts = append(vmt.opts, opt)
+	}
 	return vmt
 }
 
@@ -468,7 +472,14 @@ func (vmt vmTestCase) withMemLimit(limit int) vmTestCase {
 }
 
 func (vmt vmTestCase) withInput(source string) vmTestCase {
-	vmt.opts = append(vmt.opts, WithInput(strings.NewReader(source)))
+	vmt.opts = append(vmt.opts, func(vmt *vmTestCase, t *testing.T) VMOption {
+		name := t.Name() + "/input"
+		if id := vmt.nextInputID; id > 0 {
+			name += "_" + strconv.Itoa(id+1)
+		}
+		vmt.nextInputID++
+		return WithInput(NamedReader(name, strings.NewReader(source)))
+	})
 	return vmt
 }
 
@@ -573,10 +584,27 @@ func (vmt vmTestCase) withTestHexOutput() vmTestCase {
 	return vmt
 }
 
+func (vmt vmTestCase) buildOptions(t *testing.T) []VMOption {
+	opts := make([]VMOption, 0, len(vmt.opts))
+	for _, opt := range vmt.opts {
+		switch impl := opt.(type) {
+		case func(vmt *vmTestCase, t *testing.T) VMOption:
+			opts = append(opts, impl(&vmt, t))
+		case VMOption:
+			opts = append(opts, impl)
+		default:
+			t.Logf("unsupported vmTestCase opt type %T", opt)
+			t.FailNow()
+		}
+	}
+	return opts
+}
+
 func (vmt vmTestCase) run(t *testing.T) {
 	const defaultMemLimit = 4 * 1024
+
 	var vm VM
-	vm.apply(vmt.opts...)
+	vm.apply(vmt.buildOptions(t)...)
 
 	for _, setup := range vmt.setup {
 		setup(t, &vm)

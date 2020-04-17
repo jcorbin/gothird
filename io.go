@@ -19,7 +19,7 @@ func (il inLine) String() string {
 }
 
 type ioCore struct {
-	in      io.RuneScanner
+	in      io.RuneReader
 	inQueue []io.Reader
 
 	lastLine inLine
@@ -73,7 +73,7 @@ func (ioc *ioCore) nextIn() bool {
 	if len(ioc.inQueue) > 0 {
 		r := ioc.inQueue[0]
 		ioc.inQueue = ioc.inQueue[1:]
-		ioc.in = newRuneScanner(r)
+		ioc.in = newRuneReader(r)
 		ioc.scanLine.fileName = nameOf(r)
 		ioc.scanLine.number = 1
 	}
@@ -125,12 +125,33 @@ func writeRune(w io.Writer, r rune) (err error) {
 	return err
 }
 
-func newRuneScanner(r io.Reader) io.RuneScanner {
-	if rs, is := r.(io.RuneScanner); is {
-		return rs
+func newRuneReader(r io.Reader) io.RuneReader {
+	switch impl := r.(type) {
+	case io.RuneReader:
+		return impl
+	case readerName:
+		br := bufio.NewReader(impl.Reader)
+		return runeReaderName{br, br, impl.name}
+	case named:
+		return runeReaderName{r, bufio.NewReader(r), impl.Name()}
+	default:
+		return bufio.NewReader(r)
 	}
-	return bufio.NewReader(r)
 }
+
+type readerName struct {
+	io.Reader
+	name string
+}
+
+type runeReaderName struct {
+	io.Reader
+	io.RuneReader
+	name string
+}
+
+func (nr readerName) Name() string     { return nr.name }
+func (nr runeReaderName) Name() string { return nr.name }
 
 type writeFlusher interface {
 	io.Writer
@@ -215,8 +236,12 @@ func multiWriteFlusher(a, b writeFlusher) writeFlusher {
 	}
 }
 
+type named interface {
+	Name() string
+}
+
 func nameOf(obj interface{}) string {
-	if nom, ok := obj.(interface{ Name() string }); ok {
+	if nom, ok := obj.(named); ok {
 		return nom.Name()
 	}
 	return fmt.Sprintf("<unnamed %T>", obj)
