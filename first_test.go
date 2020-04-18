@@ -260,7 +260,7 @@ func Test_VM(t *testing.T) {
 		vmCodePushint, 1, vmCodeSet,
 		vmCodeRead,
 		104,
-	).expectMemAt(115, 100, 15, vmCodeRun, 104).withTestLog().expectDump(lines(
+	).expectMemAt(115, 100, 15, vmCodeRun, 104).expectDump(lines(
 		`prog: 114`,
 		`dict: [115 100 95 90 85 81 76 71 66 61 56 51 46 42 38 32]`,
 		`stack: []`,
@@ -635,9 +635,8 @@ func (vmt vmTestCase) run(t *testing.T) {
 			// t.Logf("VM dump:")
 			lw := &logWriter{prefix: "fail_dump: ", logf: t.Logf}
 			vmDumper{
-				vm:       &vm,
-				out:      lw,
-				rawWords: true,
+				vm:  &vm,
+				out: lw,
 			}.dump()
 			lw.Close()
 		}
@@ -717,7 +716,7 @@ func (dump *vmDumper) dumpStack() {
 
 func (dump *vmDumper) dumpMem() {
 	if dump.addrWidth == 0 {
-		dump.addrWidth = radixWidth(len(dump.vm.mem), 10) + 1
+		dump.addrWidth = len(strconv.Itoa(len(dump.vm.mem))) + 1
 	}
 	if dump.words == nil {
 		dump.scanWords()
@@ -895,29 +894,6 @@ func (dump *vmDumper) nextWord() uint {
 		dump.wordID--
 	}
 	return dump.word()
-}
-
-func radixWidth(n, radix int) int {
-	w := 1
-	for n > radix {
-		w++
-		n /= radix
-	}
-	return w
-}
-
-func Test_radixWidth(t *testing.T) {
-	for _, tc := range []struct {
-		n, w int
-	}{
-		{w: 1, n: 0},
-		{w: 1, n: 1},
-		{w: 1, n: 5},
-		{w: 2, n: 50},
-		{w: 3, n: 300},
-	} {
-		assert.Equal(t, tc.w, radixWidth(tc.n, 10), "width(%v, 10) = %v", tc.n, tc.w)
-	}
 }
 
 func lines(parts ...string) string {

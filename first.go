@@ -10,6 +10,7 @@ package main
 // access the stack or string storage.
 type VM struct {
 	ioCore
+	logging
 
 	prog uint // program counter
 
@@ -37,7 +38,6 @@ type VM struct {
 // above-mentioned "the stack", which is used by FIRST to keep track of
 // function call return addresses.
 func (vm *VM) call(addr uint) {
-	vm.logf("call %v from %v", addr, vm.prog)
 	vm.haltif(vm.pushr(vm.prog))
 	vm.prog = addr
 }
@@ -129,7 +129,7 @@ func (vm *VM) key() {
 func (vm *VM) read() {
 	token := vm.scan()
 	if word := vm.lookup(token); word != 0 {
-		vm.logf("read %v @%v", token, word)
+		vm.logf(".", "read %v @%v", token, word)
 		vm.pushr(vm.prog)
 		vm.prog = word + 2
 		return
@@ -137,7 +137,7 @@ func (vm *VM) read() {
 
 	val, err := vm.literal(token)
 	vm.haltif(err)
-	vm.logf("read pushint %v", val)
+	vm.logf(".", "read pushint(%v)", val)
 	vm.compile(vmCodePushint)
 	vm.compile(int(val))
 }
@@ -153,7 +153,6 @@ func (vm *VM) read() {
 func (vm *VM) exit() {
 	addr, err := vm.popr()
 	vm.haltif(err)
-	vm.logf("return to %v from %v", addr, vm.prog)
 	vm.prog = addr
 }
 
@@ -166,7 +165,7 @@ func (vm *VM) exit() {
 //                         pointer to itself so that it can be executed.
 func (vm *VM) define() {
 	token := vm.scan()
-	vm.logf("define %v -> @%v", token, uint(vm.load(0)))
+	vm.logf(".", "define %v -> @%v", token, uint(vm.load(0)))
 	vm.compileHeader(vm.symbolicate(token))
 }
 
@@ -181,7 +180,7 @@ func (vm *VM) immediate() {
 	h--                  // back
 	vm.stor(h, code)     // overwrite compile time code
 	vm.stor(0, int(h+1)) // continue
-	vm.logf("immediate @%v <- %v <- @%v", h-1, code, h)
+	vm.logf(".", "immediate @%v <- %v <- @%v", h-1, code, h)
 }
 
 // : cannot be synthesized, because we could not synthesize anything.

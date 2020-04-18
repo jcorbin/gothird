@@ -16,13 +16,13 @@ func (vm *VM) halt(err error) {
 	}
 	switch err {
 	case nil:
-		vm.logf("halt")
+		vm.logf("#", "halt")
 		panic(errHalt)
 	case io.EOF:
-		vm.logf("halt EOF")
+		vm.logf("#", "halt EOF")
 		panic(errHalt)
 	default:
-		vm.logf("halt error: %v", err)
+		vm.logf("#", "halt error: %v", err)
 		panic(err)
 	}
 }
@@ -50,7 +50,6 @@ func (vm *VM) load(addr uint) int {
 	} else if addr >= uint(len(vm.mem)) {
 		return 0
 	}
-	// vm.logf("load %v <- @%v", vm.mem[addr], addr)
 	return vm.mem[addr]
 }
 
@@ -59,7 +58,6 @@ func (vm *VM) stor(addr uint, val int) {
 		vm.grow(int(addr) + 1)
 	}
 	vm.mem[addr] = val
-	// vm.logf("stor %v -> @%v", val, addr)
 }
 
 func (vm *VM) loadProg() int {
@@ -147,26 +145,64 @@ func (vm *VM) literal(token string) (int, error) {
 }
 
 func (vm *VM) exec(ctx context.Context) {
-	if vm.logfn != nil {
-		defer vm.withLogPrefix("	")()
-	}
-
 	for {
 		vm.step()
 		vm.haltif(ctx.Err())
 	}
 }
 
-func (vm *VM) step() {
-	at := vm.prog
-	if code := vm.loadProg(); code < len(vmCodeTable) {
-		if vm.logfn != nil {
-			rstack := vm.mem[vm.load(10):vm.load(1)]
-			vm.logf("exec @%v %v -- r:%v s:%v", at, vmCodeNames[code], rstack, vm.stack)
+func (vm *VM) wordOf(addr uint) (string, uint) {
+	for prev := vm.last; prev != 0; {
+		if prev < addr {
+			if name := vm.string(uint(vm.mem[prev+1])); name != "" {
+				return name, addr - prev
+			}
+			break
 		}
+		prev = uint(vm.load(prev))
+	}
+	return "", 0
+}
+
+func (vm *VM) codeName() string {
+	code := vm.loadProg()
+	defer func() { vm.prog-- }()
+	if code >= len(vmCodeTable) {
+		if name, _ := vm.wordOf(uint(code)); name != "" {
+			return name
+		}
+		return fmt.Sprintf("call(%v)", code)
+	}
+	if code == vmCodePushint {
+		return fmt.Sprintf("pushint(%v)", vm.mem[vm.prog])
+	}
+	return vmCodeNames[code]
+}
+
+func (vm *VM) step() {
+	if vm.logfn != nil {
+		at := fmt.Sprintf(" @%v", vm.prog)
+
+		funcName, _ := vm.wordOf(vm.prog)
+		if vm.funcWidth < len(funcName) {
+			vm.funcWidth = len(funcName)
+		}
+
+		codeName := vm.codeName()
+		if vm.codeWidth < len(codeName) {
+			vm.codeWidth = len(codeName)
+		}
+
+		vm.logf(at, "% *v.% -*v r:%v s:%v",
+			vm.funcWidth, funcName,
+			vm.codeWidth, codeName,
+			vm.mem[vm.load(10):vm.load(1)],
+			vm.stack)
+	}
+
+	if code := vm.loadProg(); code < len(vmCodeTable) {
 		vmCodeTable[code](vm)
 	} else {
-		vm.logf("exec @%v call %v", at, code)
 		vm.call(uint(code))
 	}
 }
@@ -221,7 +257,7 @@ func (vm *VM) scan() (token string) {
 		if line.Len() == 0 {
 			line = vm.lastLine
 		}
-		vm.logf("scan %q from %v", token, line)
+		vm.logf(">", "scan %q from %v", token, line)
 	}()
 
 	var sb strings.Builder
@@ -268,4 +304,40 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+type logging struct {
+	logfn func(mess string, args ...interface{})
+
+	markWidth int
+	funcWidth int
+	codeWidth int
+}
+
+func (log *logging) withLogPrefix(prefix string) func() {
+	logfn := log.logfn
+	log.logfn = func(mess string, args ...interface{}) {
+		logfn(prefix+mess, args...)
+	}
+	return func() {
+		log.logfn = logfn
+	}
+}
+
+func (log logging) logf(mark, mess string, args ...interface{}) {
+	if log.logfn == nil {
+		return
+	}
+	if n := log.markWidth - len(mark); n > 0 {
+		for _, r := range mark {
+			mark = strings.Repeat(string(r), n) + mark
+			break
+		}
+	} else if n < 0 {
+		log.markWidth = len(mark)
+	}
+	if len(args) > 0 {
+		mess = fmt.Sprintf(mess, args...)
+	}
+	log.logfn("%v %v", mark, mess)
 }

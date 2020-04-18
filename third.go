@@ -52,11 +52,11 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 	// top value off the return stack, calls _read, then calls itself.  Because
 	// it kills the top of the return stack, it can recurse indefinitely.
 	line(`: ]`,
-		`  r @`,   // Get the value of the return stack pointer
-		`  1 -`,   // Subtract one
-		`  r !`,   // Store it back into the return stack pointer
-		`  _read`, // Read and compile one word
-		`  ]`)     // Start over
+		` r @`,   // Get the value of the return stack pointer
+		` 1 -`,   // Subtract one
+		` r !`,   // Store it back into the return stack pointer
+		` _read`, // Read and compile one word
+		` ]`)     // Start over
 
 	// Notice that we don't need to exit, since we never come back. Also, it's
 	// possible that an immediate word may get run during _read, and that _read
@@ -101,9 +101,9 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 	// element of the stack, and then subtract. To negate, we subtract from 0.
 	line(
 		`: +`,
-		`  0 swap -`,
-		`  -`,
-		`  exit`)
+		` 0 swap -`,
+		` -`,
+		` exit`)
 
 	// Create a copy of the top of stack
 	line(`: dup _x! _x _x exit`)
@@ -116,19 +116,19 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 	// pointer-advancing function. Given a pointer to a memory location,
 	// increment the value at that memory location.
 	line(`: inc`,
-		`  dup @`,  // Get another copy of the address, and get the value
-		``,         // so now we have value, address on top of stack.
-		`  1 +`,    // Add one to the value
-		`  swap`,   // Swap to put the address on top of the stack
-		`  ! exit`) // Write it to memory
+		` dup @`,  // Get another copy of the address, and get the value
+		``,        // so now we have value, address on top of stack.
+		` 1 +`,    // Add one to the value
+		` swap`,   // Swap to put the address on top of the stack
+		` ! exit`) // Write it to memory
 
 	// , is a standard FORTH word.  It should write the top of stack into the
 	// dictionary, and advance the pointer
 	line(`: ,`,
-		`  h @`,   //  Get the value of the dictionary pointer
-		`  !`,     //  Write the top of stack there
-		`  h inc`, //  And increment the dictionary pointer
-		`  exit`)
+		` h @`,   // Get the value of the dictionary pointer
+		` !`,     // Write the top of stack there
+		` h inc`, // And increment the dictionary pointer
+		` exit`)
 
 	// ' is a standard FORTH word.  It should push the address of the word that
 	// follows it onto the stack.  We could do this by making ' immediate, but
@@ -137,25 +137,25 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 	// into the instruction stream immediately after the ' .  We push the word
 	// there, and advance the return stack pointer so that we don't execute it.
 	line(`: '`,
-		`  r @`,   // Get the address of the top of return stack
-		``,        // We currently have a pointer to the top of return stack
-		`  @`,     // Get the value from there
-		``,        // We currently have a pointer to the instruction stream
-		`  dup`,   // Get another copy of it--the bottom copy will stick
-		``,        // around until the end of this word
-		`  1 +`,   // Increment the pointer, pointing to the NEXT instruction
-		`  r @ !`, // Write it back onto the top of the return stack
-		``,        // We currently have our first copy of the old pointer
-		``,        // to the instruction stream
-		`  @`,     // Get the value there--the address of the "next word"
-		`  exit`)
+		` r @`,   // Get the address of the top of return stack
+		``,       // We currently have a pointer to the top of return stack
+		` @`,     // Get the value from there
+		``,       // We currently have a pointer to the instruction stream
+		` dup`,   // Get another copy of it--the bottom copy will stick
+		``,       // around until the end of this word
+		` 1 +`,   // Increment the pointer, pointing to the NEXT instruction
+		` r @ !`, // Write it back onto the top of the return stack
+		``,       // We currently have our first copy of the old pointer
+		``,       // to the instruction stream
+		` @`,     // Get the value there--the address of the "next word"
+		` exit`)
 
 	// Now we're set.  ; should be an immediate word that pushes the address of
 	// exit onto the stack, then writes it out.
 	line(`: ; immediate`,
-		`  ' exit`, // Get the address of exit
-		`  ,`,      // Compile it
-		`  exit`)   // And we should return
+		` ' exit`, // Get the address of exit
+		` ,`,      // Compile it
+		` exit`)   // And we should return
 
 	// Now let's test out ; by defining a useful word:
 	line(`: drop 0 * + ;`)
@@ -175,21 +175,21 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 	// out--but we can't really break it into smaller words, because that'll
 	// trash the return stack.
 	line(`: tor`,
-		`  r @ @`,       // Get the value off the top of the return stack
-		`  swap`,        // Bring the value to be pushed to the top of stack
-		`  r @ !`,       // Write it over the current top of return stack
-		`  r @ 1 + r !`, // Increment the return stack pointer--but can't use inc
-		`  r @ !`,       // Store our return address back on the return stack
+		` r @ @`,       // Get the value off the top of the return stack
+		` swap`,        // Bring the value to be pushed to the top of stack
+		` r @ !`,       // Write it over the current top of return stack
+		` r @ 1 + r !`, // Increment the return stack pointer--but can't use inc
+		` r @ !`,       // Store our return address back on the return stack
 		` ;`)
 
 	// Next we want the opposite routine, which pops the top of the return
 	// stack, and puts it on the normal stack.
 	line(`: fromr`,
-		`  r @ @`,       // Save old value
-		`  r @ 1 - r !`, // Decrement pointer
-		`  r @ @`,       // Get value that we want off
-		`  swap`,        // Bring return address to top
-		`  r @ !`,       // Store it and return
+		` r @ @`,       // Save old value
+		` r @ 1 - r !`, // Decrement pointer
+		` r @ @`,       // Get value that we want off
+		` swap`,        // Bring return address to top
+		` r @ !`,       // Store it and return
 		` ;`)
 
 	// Now, if we have a routine that's recursing, and we want to be polite
@@ -215,11 +215,11 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 
 	// logical turns the top of stack into either 0 or 1.
 	line(`: logical   `,
-		`  dup`,        // Get two copies of it
-		`  0 <`,        // 1 if < 0, 0 otherwise
-		`  swap minus`, // Swap number back up, and take negative
-		`  0 <`,        // 1 if original was > 0, 0 otherwise
-		`  +`,          // Add them up--has to be 0 or 1!
+		` dup`,        // Get two copies of it
+		` 0 <`,        // 1 if < 0, 0 otherwise
+		` swap minus`, // Swap number back up, and take negative
+		` 0 <`,        // 1 if original was > 0, 0 otherwise
+		` +`,          // Add them up--has to be 0 or 1!
 		` ;`)
 
 	// not returns 1 if top of stack is 0, and 0 otherwise
@@ -233,12 +233,12 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 	// offset of how far to branch. To branch, we use the return stack to read
 	// the offset, and add that on to the top of the return stack, and return.
 	line(`: branch`,
-		`  r @`,   // Address of top of return stack
-		`  @`,     // Our return address
-		`  @`,     // Value from there: the branch offset
-		`  r @ @`, // Our return address again
-		`  +`,     // The address we want to execute at
-		`  r @ !`, // Store it back onto the return stack
+		` r @`,   // Address of top of return stack
+		` @`,     // Our return address
+		` @`,     // Value from there: the branch offset
+		` r @ @`, // Our return address again
+		` +`,     // The address we want to execute at
+		` r @ !`, // Store it back onto the return stack
 		` ;`)
 
 	// For conditional branches, we want to branch by a certain amount if true,
@@ -250,11 +250,11 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 
 	// Branch if the value on top of the stack is 0.
 	line(`: notbranch`,
-		`  not`,
-		`  r @ @ @`,       // Get the branch offset
-		`  computebranch`, // Adjust as necessary
-		`  r @ @ +`,       // Calculate the new address
-		`  r @ !`,         // Store it
+		` not`,
+		` r @ @ @`,       // Get the branch offset
+		` computebranch`, // Adjust as necessary
+		` r @ @ +`,       // Calculate the new address
+		` r @ !`,         // Store it
 		` ;`)
 
 	// here is a standard FORTH word which returns a pointer to the current
@@ -267,28 +267,28 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 	// *stack* we leave the address where we compiled the dummy offset. 'then'
 	// will calculate the offset and fill it in for us.
 	line(`: if immediate`,
-		`  ' notbranch ,`, // Compile notbranch
-		`  here`,          // Save the current dictionary address
-		`  0 ,`,           // Compile a dummy value
+		` ' notbranch ,`, // Compile notbranch
+		` here`,          // Save the current dictionary address
+		` 0 ,`,           // Compile a dummy value
 		` ;`)
 
 	// then expects the address to fixup to be on the stack.
 	line(`: then immediate`,
-		`  dup`,    // Make another copy of the address
-		`  here`,   // Find the current location, where to branch to
-		`  swap -`, // Calculate the difference between them
-		`  swap !`, // Bring the address to the top, and store it.
+		` dup`,    // Make another copy of the address
+		` here`,   // Find the current location, where to branch to
+		` swap -`, // Calculate the difference between them
+		` swap !`, // Bring the address to the top, and store it.
 		` ;`)
 
 	// Now that we can do if...then statements, we can do some parsing!  Let's
 	// introduce real FORTH comments. find-) will scan the input until it finds
 	// a ), and exit.
 	line(`: find-)`,
-		`  key`,         // Read in a character
-		`  ')' =`,       // Compare it to close parentheses
-		`  not if`,      // If it's not equal
-		`  tail find-)`, // repeat (popping R stack)
-		`  then`,        // Otherwise branch here and exit
+		` key`,         // Read in a character
+		` ')' =`,       // Compare it to close parentheses
+		` not if`,      // If it's not equal
+		` tail find-)`, // repeat (popping R stack)
+		` then`,        // Otherwise branch here and exit
 		` ;`)
 
 	line(

@@ -27,8 +27,6 @@ type ioCore struct {
 
 	out writeFlusher
 
-	logfn func(mess string, args ...interface{})
-
 	closers []io.Closer
 }
 
@@ -80,16 +78,6 @@ func (ioc *ioCore) nextIn() bool {
 	return ioc.in != nil
 }
 
-func (ioc *ioCore) withLogPrefix(prefix string) func() {
-	logfn := ioc.logfn
-	ioc.logfn = func(mess string, args ...interface{}) {
-		logfn(prefix+mess, args...)
-	}
-	return func() {
-		ioc.logfn = logfn
-	}
-}
-
 func (ioc *ioCore) Close() (err error) {
 	for i := len(ioc.closers) - 1; i >= 0; i-- {
 		if cerr := ioc.closers[i].Close(); err == nil {
@@ -97,12 +85,6 @@ func (ioc *ioCore) Close() (err error) {
 		}
 	}
 	return err
-}
-
-func (ioc ioCore) logf(mess string, args ...interface{}) {
-	if ioc.logfn != nil {
-		ioc.logfn(mess, args...)
-	}
 }
 
 func writeRune(w io.Writer, r rune) (err error) {
