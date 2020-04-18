@@ -66,6 +66,12 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 	line(`: main immediate ]`)
 	line(`main`)
 
+	// NOTE inserted to reset the return stack
+	// TODO also clear the data stack
+	line(`: rb 10 exit`)
+	line(`: reboot immediate rb @ r ! ]`)
+	line(`reboot`)
+
 	// Next off, I'm going to do this the easy but non-portable way, and put
 	// some character constant definitions in. I wanted them at the top of the
 	// file, but that would have burned too much of the return stack.
@@ -291,13 +297,10 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 		` then`,        // Otherwise branch here and exit
 		` ;`)
 
-	line(
-		`: ( immediate`,
-		`find-)`,
-		` ;`)
-	line(`( we should be able to do FORTH-style comments now )`)
-
 	flush(strings.NewReader(`
+: ( immediate find-) ;
+
+( we should be able to do FORTH-style comments now )
 
 ( now that we've got comments, we can comment the rest of the code
   in a legitimate [self parsing] fashion.  Note that you can't

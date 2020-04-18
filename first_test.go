@@ -4,12 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"reflect"
 	"runtime"
-	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -661,7 +661,7 @@ func (vmt vmTestCase) runOps(ctx context.Context, t *testing.T, vm *VM) {
 		names[i] = runtime.FuncForPC(reflect.ValueOf(op).Pointer()).Name()
 	}
 
-	if _, paniced, stack := isolate(func() {
+	if err := isolate("VMOps", func() error {
 		vm.init()
 		for i := 0; i < len(vmt.ops); i++ {
 			if vmt.ops[i] == nil {
@@ -670,19 +670,21 @@ func (vmt vmTestCase) runOps(ctx context.Context, t *testing.T, vm *VM) {
 			t.Logf("do[%v] %v", i, names[i])
 			vmt.ops[i](vm)
 			if err := ctx.Err(); err != nil {
-				panic(err)
+				return err
 			}
 		}
-	}); paniced != nil {
-		opErr := vmt.opErr
-		if opErr == nil {
-			opErr = errHalt
+		return nil
+	}); err != nil {
+		var ok bool
+		if opErr := vmt.opErr; opErr != nil {
+			ok = assert.True(t, errors.Is(err, opErr), "expected final %#v vm error", opErr)
+		} else {
+			ok = assert.True(t, errors.Is(err, vmHaltError{nil}), "expected vm to halt normally")
 		}
-		panicErr, ok := paniced.(error)
-		panicFail := !assert.True(t, ok, "expected a panic error, got %#v instead", paniced)
-		panicFail = panicFail || !assert.EqualError(t, panicErr, opErr.Error(), "expected panic error")
-		if panicFail {
-			t.Logf("Panic stack:\t%s", stack)
+		if !ok {
+			if stack := panicErrorStack(err); stack != "" {
+				t.Logf("Panic stack:\t%s", stack)
+			}
 		}
 	}
 }
@@ -955,55 +957,4 @@ func (ll *lineLogger) printf(mess string, args ...interface{}) {
 		ll.prior = true
 	}
 	fmt.Fprintf(ll.Writer, mess, args...)
-}
-
-func Test_isolate(t *testing.T) {
-	t.Run("normal", func(t *testing.T) {
-		exited, paniced, _ := isolate(func() {})
-		assert.False(t, exited, "expected to not exit")
-		assert.Nil(t, paniced, "expected to not panic")
-	})
-	t.Run("hello panic", func(t *testing.T) {
-		exited, paniced, stack := isolate(func() { panic("hello") })
-		assert.False(t, exited, "expected to not exit")
-		assert.Equal(t, "hello", paniced, "expected to panic")
-		assert.NotEqual(t, "", stack, "expected panic stack")
-	})
-	t.Run("exit", func(t *testing.T) {
-		exited, paniced, stack := isolate(func() { runtime.Goexit() })
-		assert.True(t, exited, "expected to exit")
-		assert.Nil(t, paniced, "expected to not panic")
-		assert.Equal(t, "", stack, "expected no stack")
-	})
-	t.Run("index panic", func(t *testing.T) {
-		exited, paniced, stack := isolate(func() {
-			var some []int
-			some[1]++
-		})
-		assert.False(t, exited, "expected to not exit")
-		assert.NotNil(t, paniced, "expected to panic")
-		assert.NotEqual(t, "", stack, "expected panic stack")
-	})
-}
-
-func isolate(f func()) (exited bool, panicValue interface{}, panicStack string) {
-	type recovered struct {
-		value interface{}
-		stack string
-	}
-	wait := make(chan recovered)
-
-	go func() {
-		defer close(wait)
-		defer func() {
-			if message := recover(); message != nil {
-				wait <- recovered{message, string(debug.Stack())}
-			}
-		}()
-		f()
-		wait <- recovered{}
-	}()
-
-	paniced, ok := <-wait
-	return !ok, paniced.value, paniced.stack
 }

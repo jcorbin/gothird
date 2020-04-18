@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"io"
 )
 
@@ -14,38 +14,25 @@ func New(opts ...VMOption) *VM {
 }
 
 func (vm *VM) Run(ctx context.Context) error {
-	done := make(chan error)
-	go func(done chan<- error) {
-		defer close(done)
-		defer func() {
-			e := recover()
-			err, _ := e.(error)
-			if err != nil {
-				done <- err
-			} else if e != nil {
-				done <- fmt.Errorf("paniced: %v", e)
-			}
-		}()
-		vm.run(ctx)
-	}(done)
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-done:
-		switch err {
-		case errHalt:
-			return nil
-		default:
-			return err
-		}
+	err := isolate("VM", func() error {
+		return vm.run(ctx)
+	})
+	if err == nil || errors.Is(err, io.EOF) {
+		return nil
 	}
+	var vmErr vmHaltError
+	if errors.As(err, &vmErr) {
+		err = vmErr.error
+	}
+	return err
 }
 
-func WithInput(r io.Reader) VMOption         { return withInput(r) }
-func WithInputWriter(w io.WriterTo) VMOption { return withInputWriter(w) }
-func WithOutput(w io.Writer) VMOption        { return withOutput(w) }
-func WithTee(w io.Writer) VMOption           { return withTee(w) }
-func WithMemLimit(limit int) VMOption        { return withMemLimit(limit) }
+func WithInput(r io.Reader) VMOption              { return withInput(r) }
+func WithInputWriter(w io.WriterTo) VMOption      { return withInputWriter(w) }
+func WithOutput(w io.Writer) VMOption             { return withOutput(w) }
+func WithTee(w io.Writer) VMOption                { return withTee(w) }
+func WithMemLimit(limit int) VMOption             { return withMemLimit(limit) }
+func WithMemLayout(retBase, memBase int) VMOption { return withMemLayout(retBase, memBase) }
 
 func WithLogf(logfn func(mess string, args ...interface{})) VMOption { return withLogfn(logfn) }
 

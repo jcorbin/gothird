@@ -5,26 +5,29 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"unicode"
 )
 
+type vmHaltError struct{ error }
+
+func (err vmHaltError) Error() string {
+	if err.error != nil {
+		return fmt.Sprintf("VM halted: %v", err.error)
+	}
+	return "VM halted"
+}
+func (err vmHaltError) Unwrap() error { return err.error }
+
 func (vm *VM) halt(err error) {
 	if ferr := vm.out.Flush(); err == nil {
 		err = ferr
 	}
-	switch err {
-	case nil:
-		vm.logf("#", "halt")
-		panic(errHalt)
-	case io.EOF:
-		vm.logf("#", "halt EOF")
-		panic(errHalt)
-	default:
-		vm.logf("#", "halt error: %v", err)
-		panic(err)
-	}
+	err = vmHaltError{err}
+	vm.logf("#", "halt error: %v", err)
+	panic(err)
 }
 
 func (vm *VM) haltif(err error) {
@@ -50,6 +53,7 @@ func (vm *VM) load(addr uint) int {
 	} else if addr >= uint(len(vm.mem)) {
 		return 0
 	}
+	// vm.logf("load %v <- @%v", vm.mem[addr], addr)
 	return vm.mem[addr]
 }
 
@@ -58,6 +62,7 @@ func (vm *VM) stor(addr uint, val int) {
 		vm.grow(int(addr) + 1)
 	}
 	vm.mem[addr] = val
+	// vm.logf("stor %v -> @%v", val, addr)
 }
 
 func (vm *VM) loadProg() int {
@@ -95,7 +100,7 @@ func (vm *VM) pushr(addr uint) error {
 func (vm *VM) popr() (uint, error) {
 	r := uint(vm.load(1))
 	if retBase := uint(vm.load(10)); r == retBase {
-		return 0, errHalt
+		vm.halt(nil)
 	} else if r < retBase {
 		return 0, errRetUnderflow
 	}
@@ -144,10 +149,12 @@ func (vm *VM) literal(token string) (int, error) {
 	return 0, err
 }
 
-func (vm *VM) exec(ctx context.Context) {
+func (vm *VM) exec(ctx context.Context) error {
 	for {
 		vm.step()
-		vm.haltif(ctx.Err())
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 	}
 }
 
@@ -238,7 +245,7 @@ func (vm *VM) init() {
 	}
 }
 
-func (vm *VM) run(ctx context.Context) {
+func (vm *VM) run(ctx context.Context) error {
 	vm.init()
 
 	// clear program counter and compile builtins
@@ -248,7 +255,7 @@ func (vm *VM) run(ctx context.Context) {
 
 	// run the entry point
 	vm.prog = entry
-	vm.exec(ctx)
+	return vm.exec(ctx)
 }
 
 func (vm *VM) scan() (token string) {
@@ -285,7 +292,6 @@ func (vm *VM) scan() (token string) {
 }
 
 var (
-	errHalt         = errors.New("normal halt")
 	errOOM          = errors.New("out of memory")
 	errRetOverflow  = errors.New("return stack overflow")
 	errRetUnderflow = errors.New("return stack underflow")
@@ -340,4 +346,63 @@ func (log logging) logf(mark, mess string, args ...interface{}) {
 		mess = fmt.Sprintf(mess, args...)
 	}
 	log.logfn("%v %v", mark, mess)
+}
+
+func isolate(name string, f func() error) error {
+	errch := make(chan error, 1)
+	go func() {
+		defer close(errch)
+		defer recoverExitError(name, errch)
+		defer recoverPanicError(name, errch)
+		errch <- f()
+	}()
+	return <-errch
+}
+
+func recoverExitError(name string, errch chan<- error) {
+	select {
+	case errch <- fmt.Errorf("%v called runtime.Goexit", name):
+	default:
+		// assumes that that the happy path does a (maybe nil) send
+	}
+}
+
+func recoverPanicError(name string, errch chan<- error) {
+	if e := recover(); e != nil {
+		select {
+		case errch <- panicError{name, e, string(debug.Stack())}:
+		default:
+		}
+	}
+}
+
+func panicErrorStack(err error) string {
+	var pe panicError
+	if errors.As(err, &pe) {
+		return pe.stack
+	}
+	return ""
+}
+
+type panicError struct {
+	name  string
+	e     interface{}
+	stack string
+}
+
+func (pe panicError) Error() string {
+	return fmt.Sprintf("%v paniced: %v", pe.name, pe.e)
+}
+
+func (pe panicError) Format(f fmt.State, c rune) {
+	if c == 'v' && f.Flag('+') {
+		fmt.Fprintf(f, "%v paniced: %v\nPanic stack: %s", pe.name, pe.e, pe.stack)
+	} else {
+		fmt.Fprintf(f, "%v paniced: %v", pe.name, pe.e)
+	}
+}
+
+func (pe panicError) Unwrap() error {
+	err, _ := pe.e.(error)
+	return err
 }

@@ -38,6 +38,7 @@ type VM struct {
 // above-mentioned "the stack", which is used by FIRST to keep track of
 // function call return addresses.
 func (vm *VM) call(addr uint) {
+	// vm.logf("call %v from %v", addr, vm.prog)
 	vm.haltif(vm.pushr(vm.prog))
 	vm.prog = addr
 }
@@ -153,6 +154,7 @@ func (vm *VM) read() {
 func (vm *VM) exit() {
 	addr, err := vm.popr()
 	vm.haltif(err)
+	// vm.logf("return to %v from %v", addr, vm.prog)
 	vm.prog = addr
 }
 

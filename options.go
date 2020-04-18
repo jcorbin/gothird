@@ -65,6 +65,22 @@ func (lim memLimitOption) apply(vm *VM) {
 	vm.memLimit = int(lim)
 }
 
+type memLayoutOption struct {
+	retBase int
+	memBase int
+}
+
+func withMemLayout(retBase, memBase int) memLayoutOption { return memLayoutOption{retBase, memBase} }
+
+func (lay memLayoutOption) apply(vm *VM) {
+	if lay.retBase != 0 {
+		vm.stor(10, lay.retBase)
+	}
+	if lay.memBase != 0 {
+		vm.stor(11, lay.memBase)
+	}
+}
+
 type pipeInput struct {
 	*io.PipeReader
 	name string
