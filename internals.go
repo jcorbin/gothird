@@ -264,7 +264,7 @@ func (vm *VM) scan() (token string) {
 		if line.Len() == 0 {
 			line = vm.lastLine
 		}
-		vm.logf(">", "scan %q from %v", token, line)
+		vm.logf(">", "scan %v %q <- %q", line.inLoc, token, line.Buffer.String())
 	}()
 
 	var sb strings.Builder
