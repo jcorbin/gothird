@@ -72,17 +72,6 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 	line(`: reboot immediate rb @ r ! ]`)
 	line(`reboot`)
 
-	// Next off, I'm going to do this the easy but non-portable way, and put
-	// some character constant definitions in. I wanted them at the top of the
-	// file, but that would have burned too much of the return stack.
-	line(`: '"'     34 exit`)
-	line(`: ')'     41 exit`)
-	line(`: '\n'    10 exit`)
-	line(`: 'space' 32 exit`)
-	line(`: '0'     48 exit`)
-	line(`: '-'     45 exit`)
-	line(`: cr '\n' echo exit`)
-
 	// Next, we want to define some temporary variables for locations
 	// 3, 4, and 5, since this'll make our code look clearer.
 	line(`: _x  3 @ exit`)
@@ -360,10 +349,10 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
     '-' echo minus
   then
   printnum
-  'space' echo
+  <sp> echo
 ;
 
-: debugprint dup . cr ;
+: debugprint dup . <nl> echo ;
 
 ( the following routine takes a pointer to a string, and prints it,
   except for the trailing quote.  returns a pointer to the next word
@@ -505,7 +494,7 @@ fix-::
   dup @                 ( save the pointer and get the contents )
   dup ' exit
   = if
-        " ;)" cr exit
+        " ;)" <nl> echo exit
   then
   . " ), "
   1 +
@@ -514,7 +503,7 @@ fix-::
 
 : dump _dump ;
 
-: # . cr ;
+: # . <nl> echo ;
 
 : var <build , does> ;
 : constant <build , does> @ ;

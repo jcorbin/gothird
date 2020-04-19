@@ -141,7 +141,7 @@ func (vm *VM) lookup(token string) uint {
 }
 
 func (vm *VM) literal(token string) (int, error) {
-	if n, err := strconv.ParseInt(token, 10, strconv.IntSize); err == nil {
+	if n, err := strconv.ParseInt(token, 0, strconv.IntSize); err == nil {
 		return int(n), nil
 	}
 	if value, ok := runeLiteral(token); ok {
@@ -150,7 +150,121 @@ func (vm *VM) literal(token string) (int, error) {
 	return 0, literalError(token)
 }
 
+type ctl struct {
+	n string
+	r rune
+}
+
+var (
+	_c0Ctls = [32]ctl{
+		{"<NUL>", 0x00},
+		{"<SOH>", 0x01},
+		{"<STX>", 0x02},
+		{"<ETX>", 0x03},
+		{"<EOT>", 0x04},
+		{"<ENQ>", 0x05},
+		{"<ACK>", 0x06},
+		{"<BEL>", 0x07},
+		{"<BS>", 0x08},
+		{"<HT>", 0x09},
+		{"<NL>", 0x0A},
+		{"<VT>", 0x0B},
+		{"<NP>", 0x0C},
+		{"<CR>", 0x0D},
+		{"<SO>", 0x0E},
+		{"<SI>", 0x0F},
+		{"<DLE>", 0x10},
+		{"<DC1>", 0x11},
+		{"<DC2>", 0x12},
+		{"<DC3>", 0x13},
+		{"<DC4>", 0x14},
+		{"<NAK>", 0x15},
+		{"<SYN>", 0x16},
+		{"<ETB>", 0x17},
+		{"<CAN>", 0x18},
+		{"<EM>", 0x19},
+		{"<SUB>", 0x1A},
+		{"<ESC>", 0x1B},
+		{"<FS>", 0x1C},
+		{"<GS>", 0x1D},
+		{"<RS>", 0x1E},
+		{"<US>", 0x1F},
+	}
+
+	pseudoCtls = [2]ctl{
+		{"<SP>", 0x20},
+		{"<DEL>", 0x7F},
+	}
+
+	c1Ctls = [32]ctl{
+		{"<PAD>", 0x80},
+		{"<HOP>", 0x81},
+		{"<BPH>", 0x82},
+		{"<NBH>", 0x83},
+		{"<IND>", 0x84},
+		{"<NEL>", 0x85},
+		{"<SSA>", 0x86},
+		{"<ESA>", 0x87},
+		{"<HTS>", 0x88},
+		{"<HTJ>", 0x89},
+		{"<VTS>", 0x8A},
+		{"<PLD>", 0x8B},
+		{"<PLU>", 0x8C},
+		{"<RI>", 0x8D},
+		{"<SS2>", 0x8E},
+		{"<SS3>", 0x8F},
+		{"<DCS>", 0x90},
+		{"<PU1>", 0x91},
+		{"<PU2>", 0x92},
+		{"<STS>", 0x93},
+		{"<CCH>", 0x94},
+		{"<MW>", 0x95},
+		{"<SPA>", 0x96},
+		{"<EPA>", 0x97},
+		{"<SOS>", 0x98},
+		{"<SGCI>", 0x99},
+		{"<SCI>", 0x9A},
+		{"<CSI>", 0x9B},
+		{"<ST>", 0x9C},
+		{"<OSC>", 0x9D},
+		{"<PM>", 0x9E},
+		{"<APC>", 0x9F},
+	}
+)
+
+func buildControlWords(table map[string]rune, ctls []ctl) {
+	for _, ctl := range ctls {
+		table[strings.ToUpper(ctl.n)] = ctl.r
+		table[strings.ToLower(ctl.n)] = ctl.r
+		if caret := caretForm(ctl.r); caret != "" {
+			table[caret] = ctl.r
+		}
+	}
+}
+
+var controlWords map[string]rune
+
+func init() {
+	controlWords = make(map[string]rune, 3*(len(_c0Ctls)+len(pseudoCtls)+len(c1Ctls)))
+	buildControlWords(controlWords, _c0Ctls[:])
+	buildControlWords(controlWords, pseudoCtls[:])
+	buildControlWords(controlWords, c1Ctls[:])
+}
+
+func caretForm(r rune) string {
+	if r < 0x20 || r == 0x7f {
+		return "^" + string(r^0x40)
+	} else if 0x80 <= r && r <= 0x9f {
+		return "^[" + string(r^0xc0)
+	}
+	return ""
+}
+
 func runeLiteral(token string) (rune, bool) {
+	if r, defined := controlWords[token]; defined {
+		return r, true
+	}
+
 	runes := []rune(token)
 	if len(runes) < 1 || runes[0] != '\'' {
 		return 0, false

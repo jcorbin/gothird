@@ -350,10 +350,48 @@ func Test_VM(t *testing.T) {
 			21 3 /    digit
 			9 2 3 * - digit
 			2 2 *     digit
-			'\n' echo
+			'\n'      echo
 			exit
 		test
-	`).expectOutput("07734\n").withTestLog())
+	`).expectOutput("07734\n"))
+
+	testCases = append(testCases, vmTest("ansi literals").withInput(`
+		exit : immediate _read @ ! - * / < echo key pick
+		: ] 1 @ 1 - 1 ! _read ]
+		: main immediate ] main
+		: reboot immediate 10 @ 1 ! ] reboot
+		: _x  3 @ exit
+		: _x! 3 ! exit
+		: + _x! 0 _x - - exit
+
+		: digit '0' + echo exit
+
+		: sgr_reset
+			<CSI> echo
+			'0'   echo
+			'm'   echo
+			exit
+
+		: sgr_fg
+			<CSI> echo
+			'3'   echo
+			'0' + echo
+			'm'   echo
+			exit
+
+		: test immediate
+			sgr_reset 2 sgr_fg
+				'S' echo
+				'u' echo
+				'p' echo
+				'e' echo
+				'r' echo
+			sgr_reset
+			<cr> echo
+			<nl> echo
+			exit
+		test
+	`).expectOutput("\x1b[0m\x1b[32mSuper\x1b[0m\r\n"))
 
 	testCases.run(t)
 }
