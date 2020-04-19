@@ -14,17 +14,19 @@ func main() {
 	defer log.Exit()
 
 	var (
-		timeout  time.Duration
-		trace    bool
-		memLimit int
 		retBase              = 16
 		memBase              = 80
 		kernel   io.WriterTo = thirdKernel
+		memLimit int
+		timeout  time.Duration
+		trace    bool
+		dump     bool
 	)
 
+	flag.IntVar(&memLimit, "mem-limit", 0, "enable memory limit")
 	flag.DurationVar(&timeout, "timeout", 0, "specify a time limit")
 	flag.BoolVar(&trace, "trace", false, "enable trace logging")
-	flag.IntVar(&memLimit, "mem-limit", 0, "enable memory limit")
+	flag.BoolVar(&dump, "dump", false, "print a dump after execution")
 	flag.Parse()
 
 	if err := func(ctx context.Context, opts ...VMOption) error {
@@ -33,7 +35,7 @@ func main() {
 		}
 
 		if trace {
-			log.Through(scanPipe("trace scanner",
+			log.Wrap(scanPipe("trace scanner",
 				patternScanner(scanPattern, &locScanner{}),
 				// patternScanner(stepPattern, &retScanner{}),
 			))
@@ -41,6 +43,14 @@ func main() {
 		}
 
 		vm := New(opts...)
+
+		if dump {
+			lw := &logWriter{logf: log.Leveledf("DUMP")}
+			defer lw.Close()
+			defer vmDumper{vm: vm, out: lw}.dump()
+		}
+
+		defer log.Unwrap()
 
 		if timeout != 0 {
 			var cancel context.CancelFunc
