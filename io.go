@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"regexp"
 	"sync"
 )
 
@@ -234,23 +235,21 @@ func nameOf(obj interface{}) string {
 	return fmt.Sprintf("<unnamed %T>", obj)
 }
 
-func runMarkScanner(name string, out io.WriteCloser, fn func(sc *markScanner) error) io.WriteCloser {
+func runMarkScanner(name string, out io.WriteCloser, sc scanner) io.WriteCloser {
 	return runPipeWorker(name, func(r io.Reader) (rerr error) {
-		sc := markScanner{
+		ms := markScanner{
 			Scanner: bufio.NewScanner(r),
 			out:     out,
 		}
 		defer func() {
-			if err := sc.Close(); rerr == nil {
+			if err := ms.Close(); rerr == nil {
 				rerr = err
 			}
 		}()
-		for sc.Scan() {
-			if err := fn(&sc); err != nil {
-				return err
-			}
+		for ms.Scan() {
+			sc.scan(&ms)
 		}
-		return sc.Err()
+		return ms.Err()
 	})
 }
 
@@ -288,6 +287,80 @@ func (work pipeWorker) run(rc io.ReadCloser, fun func(r io.Reader) error) {
 		err := fun(rc)
 		return err
 	})
+}
+
+func scanPipe(name string, scs ...scanner) func(out io.WriteCloser) io.WriteCloser {
+	sc := scanners(scs...)
+	return func(out io.WriteCloser) io.WriteCloser {
+		return runMarkScanner(name, out, sc)
+	}
+}
+
+func patternScanner(pattern *regexp.Regexp, ss ...subscanner) scanner {
+	return regexpScanner{pattern, subscanners(ss...)}
+}
+
+type scanner interface {
+	scan(ms *markScanner) bool
+}
+
+type subscanner interface {
+	scan(ms *markScanner, submatch [][]byte) bool
+}
+
+func scanners(ss ...scanner) scanner {
+	switch len(ss) {
+	case 0:
+		return nil
+	case 1:
+		return ss[0]
+	default:
+		return firstScanner(ss)
+	}
+}
+
+func subscanners(ss ...subscanner) subscanner {
+	switch len(ss) {
+	case 0:
+		return nil
+	case 1:
+		return ss[0]
+	default:
+		return firstSubscanner(ss)
+	}
+}
+
+type firstScanner []scanner
+type firstSubscanner []subscanner
+
+type regexpScanner struct {
+	*regexp.Regexp
+	subscanner
+}
+
+func (sc regexpScanner) scan(ms *markScanner) bool {
+	if submatch := sc.FindSubmatch(ms.Bytes()); len(submatch) > 0 {
+		return sc.subscanner.scan(ms, submatch)
+	}
+	return false
+}
+
+func (ss firstScanner) scan(ms *markScanner) bool {
+	for _, s := range ss {
+		if s.scan(ms) {
+			return true
+		}
+	}
+	return false
+}
+
+func (ss firstSubscanner) scan(ms *markScanner, submatch [][]byte) bool {
+	for _, s := range ss {
+		if s.scan(ms, submatch) {
+			return true
+		}
+	}
+	return false
 }
 
 type markScanner struct {
@@ -334,7 +407,6 @@ func (sc *markScanner) Flush() error {
 func (sc *markScanner) Close() error {
 	for sc.Last.level > 0 {
 		sc.Last.closeMark()
-		sc.Last.WriteByte('\n')
 	}
 	err := sc.Flush()
 	if cerr := sc.out.Close(); err == nil {
@@ -357,19 +429,33 @@ const (
 
 type markBuffer struct {
 	lineBuffer
-	level int
+	level  int
+	opened bool
 }
 
 func (buf *markBuffer) openMark() {
 	buf.level++
 	buf.WriteString(openMark)
+	buf.opened = true
 }
 
 func (buf *markBuffer) closeMark() {
-	if buf.level > 0 {
+	if buf.opened {
+		b := buf.Next(buf.Len())
+		if i := bytes.Index(b, []byte(openMark)); i >= 0 {
+			b = b[:i]
+		}
+		buf.Write(b)
+		buf.opened = false
+	} else if buf.level > 0 {
 		buf.level--
 		buf.WriteString(closeMark)
 	}
+}
+
+func (buf *markBuffer) WriteTo(w io.Writer) (n int64, err error) {
+	buf.opened = false
+	return buf.lineBuffer.WriteTo(w)
 }
 
 type lineBuffer struct{ bytes.Buffer }
