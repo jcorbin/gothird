@@ -146,7 +146,33 @@ func (vm *VM) literal(token string) (int, error) {
 	if err == nil {
 		return int(n), nil
 	}
+	if value, ok := runeLiteral(token); ok {
+		return int(value), nil
+	}
 	return 0, err
+}
+
+func runeLiteral(token string) (rune, bool) {
+	runes := []rune(token)
+	if len(runes) < 1 || runes[0] != '\'' {
+		return 0, false
+	}
+
+	switch len(runes) {
+	case 3:
+		if runes[2] != '\'' {
+			return 0, false
+		}
+	case 4:
+		if runes[3] != '\'' {
+			return 0, false
+		}
+	default:
+		return 0, false
+	}
+
+	value, _, _, err := strconv.UnquoteChar(token[1:], '\'')
+	return value, err == nil
 }
 
 func (vm *VM) exec(ctx context.Context) error {

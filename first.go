@@ -270,23 +270,22 @@ func (vm *VM) compileEntry() uint {
 }
 
 const (
-	vmCodeCompile = iota // <INTERNAL>  compile the program counter
-
 	// Here's a handy summary of all the FIRST words:
-	vmCodeDefine    // :           compile the header of a definition
-	vmCodeImmediate // immediate   modify the header to create an immediate word
-	vmCodeRead      // _read       read a word from input and compile a pointer to it
-	vmCodeGet       // @           read from memory
-	vmCodeSet       // !           write to memory
-	vmCodeSub       // -           binary integer operation on the stack
-	vmCodeMul       // *           binary integer operation on the stack
-	vmCodeDiv       // /           binary integer operation on the stack
-	vmCodeLess      // <0          is top of stack less than 0?
-	vmCodeExit      // exit        stop running the current function
-	vmCodeEcho      // echo        output one character
-	vmCodeKey       // key         input one character
-	vmCodePick      // pick        pop top of stack, use as index into stack and copy up that element
+	vmCodeExit      = iota // exit        stop running the current function
+	vmCodeDefine           // :           compile the header of a definition
+	vmCodeImmediate        // immediate   modify the header to create an immediate word
+	vmCodeRead             // _read       read a word from input and compile a pointer to it
+	vmCodeGet              // @           read from memory
+	vmCodeSet              // !           write to memory
+	vmCodeSub              // -           binary integer operation on the stack
+	vmCodeMul              // *           binary integer operation on the stack
+	vmCodeDiv              // /           binary integer operation on the stack
+	vmCodeLess             // <0          is top of stack less than 0?
+	vmCodeEcho             // echo        output one character
+	vmCodeKey              // key         input one character
+	vmCodePick             // pick        pop top of stack, use as index into stack and copy up that element
 
+	vmCodeCompile // <INTERNAL>  compile the program counter
 	vmCodeRun     // <INTERNAL>  run at the program counter
 	vmCodePushint // <INTERNAL>  push from memory at program counter
 	vmCodeCompIt  // <INTERNAL>  compile from memory at program counter
@@ -296,6 +295,11 @@ const (
 )
 
 func (vm *VM) compileBuiltins() {
+	vm.define()
+	vm.mem[vm.last+2] = vmCodeCompIt // compile inline
+	vm.compile(vmCodeExit)
+	vm.immediate() // write the vmCodeExit token over the prior vmCodeRun
+
 	for code := vmCodeDefine; code <= vmCodeLastBuiltin; code++ {
 		vm.define()
 		vm.mem[vm.last+2] = vmCodeCompIt // compile inline
@@ -304,9 +308,7 @@ func (vm *VM) compileBuiltins() {
 		}
 		vm.compile(code)
 		vm.immediate() // write the builtin token over the prior vmCodeRun
-		if code != vmCodeExit {
-			vm.compile(vmCodeExit)
-		}
+		vm.compile(vmCodeExit)
 	}
 }
 
@@ -315,8 +317,7 @@ var vmCodeNames [vmCodeMax]string
 
 func init() {
 	vmCodeTable = [...]func(vm *VM){
-		(*VM).compileme,
-
+		(*VM).exit,
 		(*VM).define,
 		(*VM).immediate,
 		(*VM).read,
@@ -326,19 +327,18 @@ func init() {
 		(*VM).mul,
 		(*VM).div,
 		(*VM).under0,
-		(*VM).exit,
 		(*VM).echo,
 		(*VM).key,
 		(*VM).pick,
 
+		(*VM).compileme,
 		(*VM).runme,
 		(*VM).pushint,
 		(*VM).compileit,
 	}
 
 	vmCodeNames = [...]string{
-		"compileme",
-
+		"exit",
 		"define",
 		"immediate",
 		"read",
@@ -348,11 +348,11 @@ func init() {
 		"mul",
 		"div",
 		"under0",
-		"exit",
 		"echo",
 		"key",
 		"pick",
 
+		"compileme",
 		"runme",
 		"pushint",
 		"compileit",
