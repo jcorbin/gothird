@@ -38,7 +38,7 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 	}
 
 	// The first thing we have to do is give the symbols for our built-ins.
-	line(`: immediate _read @ ! - * / <0 exit echo key pick`)
+	line(`exit : immediate _read @ ! - * / <0 echo key pick`)
 
 	// Next we want to be mildly self commenting, so we define the word 'r' to
 	// push the *address of the return stack pointer* onto the stack--NOT the

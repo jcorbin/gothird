@@ -36,20 +36,9 @@ func (vm *VM) haltif(err error) {
 	}
 }
 
-func (vm *VM) grow(size int) {
-	const chunkSize = 256
-	size = (size + chunkSize - 1) / chunkSize * chunkSize
-	if need := size - len(vm.mem); need > 0 {
-		if maxSize := vm.memLimit; maxSize != 0 && size > maxSize {
-			vm.halt(errOOM)
-		}
-		vm.mem = append(vm.mem, make([]int, need)...)
-	}
-}
-
 func (vm *VM) load(addr uint) int {
 	if maxSize := vm.memLimit; maxSize != 0 && int(addr) > maxSize {
-		vm.halt(errOOM)
+		vm.halt(memLimitError{addr, "get"})
 	} else if addr >= uint(len(vm.mem)) {
 		return 0
 	}
@@ -59,7 +48,17 @@ func (vm *VM) load(addr uint) int {
 
 func (vm *VM) stor(addr uint, val int) {
 	if addr >= uint(len(vm.mem)) {
-		vm.grow(int(addr) + 1)
+		const chunkSize = 256
+		size := (int(addr) + chunkSize) / chunkSize * chunkSize
+		if need := size - len(vm.mem); need > 0 {
+			if maxSize := vm.memLimit; maxSize != 0 && size > maxSize {
+				if int(addr) >= maxSize {
+					vm.halt(memLimitError{uint(size), "stor"})
+				}
+				size = maxSize
+			}
+			vm.mem = append(vm.mem, make([]int, need)...)
+		}
 	}
 	vm.mem[addr] = val
 	// vm.logf("stor %v -> @%v", val, addr)
@@ -87,10 +86,10 @@ func (vm *VM) pop() (val int) {
 func (vm *VM) pushr(addr uint) error {
 	r := uint(vm.load(1))
 	if retBase := uint(vm.load(10)); r < retBase {
-		return errRetUnderflow
+		return retUnderError(r)
 	}
 	if memBase := uint(vm.load(11)); r >= memBase {
-		return errRetOverflow
+		return retOverError(r)
 	}
 	vm.stor(r, int(addr))
 	vm.stor(1, int(r+1))
@@ -102,10 +101,10 @@ func (vm *VM) popr() (uint, error) {
 	if retBase := uint(vm.load(10)); r == retBase {
 		vm.halt(nil)
 	} else if r < retBase {
-		return 0, errRetUnderflow
+		return 0, retUnderError(r)
 	}
 	if memBase := uint(vm.load(11)); r > memBase {
-		return 0, errRetOverflow
+		return 0, retOverError(r)
 	}
 	r--
 	vm.stor(1, int(r))
@@ -142,14 +141,13 @@ func (vm *VM) lookup(token string) uint {
 }
 
 func (vm *VM) literal(token string) (int, error) {
-	n, err := strconv.ParseInt(token, 10, strconv.IntSize)
-	if err == nil {
+	if n, err := strconv.ParseInt(token, 10, strconv.IntSize); err == nil {
 		return int(n), nil
 	}
 	if value, ok := runeLiteral(token); ok {
 		return int(value), nil
 	}
-	return 0, err
+	return 0, literalError(token)
 }
 
 func runeLiteral(token string) (rune, bool) {
@@ -265,9 +263,9 @@ func (vm *VM) init() {
 	if r := uint(vm.load(1)); r == 0 {
 		vm.stor(1, int(retBase))
 	} else if r < retBase {
-		vm.halt(errRetUnderflow)
+		vm.halt(retUnderError(r))
 	} else if r > memBase {
-		vm.halt(errRetOverflow)
+		vm.halt(retOverError(r))
 	}
 }
 
@@ -317,19 +315,24 @@ func (vm *VM) scan() (token string) {
 	return sb.String()
 }
 
-var (
-	errOOM          = errors.New("out of memory")
-	errRetOverflow  = errors.New("return stack overflow")
-	errRetUnderflow = errors.New("return stack underflow")
-)
-
 type progError uint
-type storError uint
-type codeError uint
+type retOverError uint
+type retUnderError uint
+type literalError string
 
-func (addr progError) Error() string { return fmt.Sprintf("program smashed %v", uint(addr)) }
-func (addr storError) Error() string { return fmt.Sprintf("invalid store at %v", uint(addr)) }
-func (code codeError) Error() string { return fmt.Sprintf("invalid code %v", uint(code)) }
+func (r retOverError) Error() string   { return fmt.Sprintf("return stack overflow @%v", uint(r)) }
+func (r retUnderError) Error() string  { return fmt.Sprintf("return stack underflow @%v", uint(r)) }
+func (addr progError) Error() string   { return fmt.Sprintf("program smashed %v", uint(addr)) }
+func (lit literalError) Error() string { return fmt.Sprintf("invalid literal %q", string(lit)) }
+
+type memLimitError struct {
+	addr uint
+	op   string
+}
+
+func (lim memLimitError) Error() string {
+	return fmt.Sprintf("memory limit exceeded by %v @%v", lim.op, lim.addr)
+}
 
 func boolInt(b bool) int {
 	if b {
