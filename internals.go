@@ -463,78 +463,88 @@ func (mem *memCore) load(addr uint) (int, error) {
 		return 0, nil
 	}
 
-	pageBase := addr / mem.pageSize * mem.pageSize
-	pageAddr := addr % mem.pageSize
 	pageID := sort.Search(len(mem.bases), func(i int) bool {
-		return mem.bases[i] > pageBase
+		return mem.bases[i] > addr
 	})
-	if pageID--; pageID < 0 || mem.bases[pageID] != pageBase {
+	if pageID--; pageID < 0 {
 		return 0, nil
 	}
 
-	return mem.pages[pageID][pageAddr], nil
+	base := mem.bases[pageID]
+	page := mem.pages[pageID]
+	if i := addr - base; int(i) < len(page) {
+		return page[i], nil
+	}
+
+	return 0, nil
 }
 
 func (mem *memCore) loadInto(addr uint, buf []int) error {
-	if len(buf) == 0 {
-		return nil
-	}
-
 	end := addr + uint(len(buf))
 	if maxSize := mem.memLimit; maxSize != 0 && end > maxSize {
 		return memLimitError{end, "get"}
 	}
-	for i := range buf {
-		buf[i] = 0
-	}
 
-	if mem.pageSize == 0 || len(mem.pages) == 0 {
+	defer func() {
+		for i := range buf {
+			buf[i] = 0
+		}
+	}()
+
+	if len(buf) == 0 || mem.pageSize == 0 {
 		return nil
 	}
 
-	pageBase := addr / mem.pageSize * mem.pageSize
-	pageAddr := addr % mem.pageSize
 	pageID := sort.Search(len(mem.bases), func(i int) bool {
-		return mem.bases[i] > pageBase
+		return mem.bases[i] > addr
 	})
 	if pageID--; pageID < 0 {
 		return nil
 	}
 
-	if mem.bases[pageID] != pageBase {
+	for ; addr < end && pageID < len(mem.bases); pageID++ {
 		base := mem.bases[pageID]
 		if base > end {
-			return nil
+			break
 		}
-		buf = buf[base-addr:] // XXX
-		addr = base
-		pageAddr = 0
-	}
 
-	for {
-		if skip := mem.bases[pageID] - addr; skip > 0 {
-			addr += skip
-			buf = buf[skip:]
-			if len(buf) == 0 {
-				return nil
+		if skip := int(base) - int(addr); skip > 0 {
+			if skip >= len(buf) {
+				break
 			}
+			addr += uint(skip)
+			for i := range buf[:skip] {
+				buf[i] = 0
+			}
+			buf = buf[skip:]
 		}
 
-		n := copy(buf, mem.pages[pageID][pageAddr:])
+		page := mem.pages[pageID]
+		if skip := int(addr) - int(base); skip > 0 {
+			if skip >= len(page) {
+				continue
+			}
+			base += uint(skip)
+			page = page[skip:]
+		}
+
+		n := copy(buf, page)
 		buf = buf[n:]
-		if len(buf) == 0 {
-			return nil
-		}
 		addr += uint(n)
-		pageID++
-		pageAddr = 0
-		if pageID >= len(mem.bases) || mem.bases[pageID] > end {
-			return nil
-		}
 	}
+	return nil
 }
 
 func (mem *memCore) stor(addr uint, values ...int) error {
+	end := addr + uint(len(values))
+	if maxSize := mem.memLimit; maxSize != 0 && end > maxSize {
+		return memLimitError{end, "stor"}
+	}
+
+	if len(values) == 0 {
+		return nil
+	}
+
 	if mem.pageSize == 0 {
 		mem.pageSize = defaultPageSize
 	}
@@ -563,10 +573,6 @@ func (mem *memCore) stor(addr uint, values ...int) error {
 			mem.bases[pageID] = pageBase
 			mem.pages[pageID] = make([]int, mem.pageSize)
 		}
-	}
-
-	if len(values) == 0 {
-		return nil
 	}
 
 	for {
