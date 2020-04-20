@@ -62,7 +62,7 @@ func Test_VM(t *testing.T) {
 		vmTest("get").withMemBase(32, 99, 42, 108).withStack(33).do(get).expectStack(42),
 
 		// write to memory
-		vmTest("set").withMemBase(32, 0, 0, 0).withStack(108, 33).do(set).expectMemAt(32, 0, 108, 0),
+		vmTest("set").withPageSize(16).withMemBase(32, 0, 0, 0).withStack(108, 33).do(set).expectMemAt(32, 0, 108, 0),
 
 		// push an immediate value onto the stack
 		vmTest("pushint").withMemAt(32, 99, 42, 108).withProg(33).do(pushint).expectStack(42).expectProg(34),
@@ -393,6 +393,53 @@ func Test_VM(t *testing.T) {
 		test
 	`).expectOutput("\x1b[0m\x1b[32mSuper\x1b[0m\r\n"))
 
+	testCases = append(testCases, vmTest("better boot").withInput(`
+		exit : immediate _read @ ! - * / < echo key pick
+		: _r   1  @ exit
+		: _r!  1  ! exit
+		: _rb  10 @ exit
+		: _rb! 10 ! exit
+		: ] _r 1 - _r! _read ]
+		: main immediate _rb _r! ] main
+
+		: test immediate
+			42
+			1024 1024 * @
+		test
+	`).expectRStack().expectStack(42).withTestLog())
+
+	testCases = append(testCases, vmTest("quote word").withInput(`
+		exit : immediate _read @ ! - * / < echo key pick
+		: _r   1  @ exit
+		: _r!  1  ! exit
+		: _rb  10 @ exit
+		: _rb! 10 ! exit
+		: ] _r 1 - _r! _read ]
+		: main immediate _rb _r! ] main
+
+		: _x  3 @ exit
+		: _x! 3 ! exit
+		: + _x! 0 _x - - exit
+		: dup _x! _x _x exit
+
+		: '
+			_r @
+			dup
+			1 +
+			_r !
+			@
+			exit
+
+		: test immediate
+			' -    0x20 !
+			exit
+		test
+	`).expectMemAt(0x20,
+		vmCodeSub, // -
+		// 139,        // + FIXME
+		// vmCodeExit, // exit
+	).withTestLog().withTestDump())
+
 	testCases.run(t)
 }
 
@@ -498,14 +545,10 @@ func (vmt vmTestCase) withString(id uint, s string) vmTestCase {
 	return vmt
 }
 
-func (vmt vmTestCase) withMemAt(addr int, values ...int) vmTestCase {
+func (vmt vmTestCase) withMemAt(addr uint, values ...int) vmTestCase {
 	if len(values) != 0 {
 		vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-			end := addr + len(values)
-			if need := end - len(vm.mem); need > 0 {
-				vm.mem = append(vm.mem, make([]int, need)...)
-			}
-			copy(vm.mem[addr:], values)
+			vm.stor(uint(addr), values...)
 		}))
 	}
 	return vmt
@@ -525,21 +568,28 @@ func (vmt vmTestCase) withR(val int) vmTestCase {
 	return vmt
 }
 
-func (vmt vmTestCase) withRetBase(addr int, values ...int) vmTestCase {
+func (vmt vmTestCase) withPageSize(pageSize uint) vmTestCase {
 	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-		vm.stor(10, addr)
+		vm.pageSize = pageSize
 	}))
-	return vmt.withMemAt(addr, values...).withR(addr + len(values))
+	return vmt
 }
 
-func (vmt vmTestCase) withMemBase(addr int, values ...int) vmTestCase {
+func (vmt vmTestCase) withRetBase(addr uint, values ...int) vmTestCase {
 	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-		vm.stor(11, addr)
+		vm.stor(10, int(addr))
+	}))
+	return vmt.withMemAt(addr, values...).withR(int(addr) + len(values))
+}
+
+func (vmt vmTestCase) withMemBase(addr uint, values ...int) vmTestCase {
+	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
+		vm.stor(11, int(addr))
 	}))
 	return vmt.withMemAt(addr, values...)
 }
 
-func (vmt vmTestCase) withMemLimit(limit int) vmTestCase {
+func (vmt vmTestCase) withMemLimit(limit uint) vmTestCase {
 	vmt.opts = append(vmt.opts, withMemLimit(limit))
 	return vmt
 }
@@ -582,7 +632,20 @@ func (vmt vmTestCase) expectLast(last uint) vmTestCase {
 
 func (vmt vmTestCase) expectStack(values ...int) vmTestCase {
 	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
+		if values == nil {
+			values = []int{}
+		}
 		assert.Equal(t, values, vm.stack, "expected stack values")
+	})
+	return vmt
+}
+
+func (vmt vmTestCase) expectRStack(values ...int) vmTestCase {
+	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
+		if values == nil {
+			values = []int{}
+		}
+		assert.Equal(t, values, vm.rstack(), "expected return stack values")
 	})
 	return vmt
 }
@@ -594,33 +657,42 @@ func (vmt vmTestCase) expectString(id uint, s string) vmTestCase {
 	return vmt
 }
 
-func (vmt vmTestCase) expectMemAt(addr int, values ...int) vmTestCase {
+func (vmt vmTestCase) expectMemAt(addr uint, values ...int) vmTestCase {
 	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		end := addr + len(values)
-		assert.Equal(t, values, vm.mem[addr:end], "expected memory values @%v", addr)
+		buf := make([]int, len(values))
+		vm.loadInto(addr, buf)
+		if !assert.Equal(t, values, buf, "expected memory values @%v", addr) {
+			for i, value := range values {
+				a := addr + uint(i)
+				assert.Equal(t, value, vm.load(a), "expected memory value @%v", a)
+			}
+			t.Logf("bases: %v", vm.bases)
+			t.Logf("pages: %v", vm.pages)
+		}
 	})
 	return vmt
 }
 
-func (vmt vmTestCase) expectWord(addr int, name string, code ...int) vmTestCase {
+func (vmt vmTestCase) expectWord(addr uint, name string, code ...int) vmTestCase {
 	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		assert.Equal(t, name, vm.string(uint(vm.mem[addr+1])), "expected word @%v name", addr)
-		end := addr + 2 + len(code)
-		assert.Equal(t, code, vm.mem[addr+2:end], "expected %q @%v+2 code", name, addr)
+		buf := make([]int, len(code))
+		assert.Equal(t, name, vm.string(uint(vm.load(addr+1))), "expected word @%v name", addr)
+		vm.loadInto(addr+2, buf)
+		assert.Equal(t, code, buf, "expected %q @%v+2 code", name, addr)
 	})
 	return vmt
 }
 
 func (vmt vmTestCase) expectH(value int) vmTestCase {
 	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		assert.Equal(t, value, vm.mem[0], "expected H value")
+		assert.Equal(t, value, vm.load(0), "expected H value")
 	})
 	return vmt
 }
 
 func (vmt vmTestCase) expectR(value int) vmTestCase {
 	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		assert.Equal(t, value, vm.mem[1], "expected R value")
+		assert.Equal(t, value, vm.load(1), "expected R value")
 	})
 	return vmt
 }

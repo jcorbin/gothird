@@ -6,20 +6,12 @@ import (
 	"fmt"
 	"io"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
+	"testing"
 	"unicode"
 )
-
-type vmHaltError struct{ error }
-
-func (err vmHaltError) Error() string {
-	if err.error != nil {
-		return fmt.Sprintf("VM halted: %v", err.error)
-	}
-	return "VM halted"
-}
-func (err vmHaltError) Unwrap() error { return err.error }
 
 func (vm *VM) halt(err error) {
 	if ferr := vm.out.Flush(); err == nil {
@@ -30,38 +22,24 @@ func (vm *VM) halt(err error) {
 	panic(err)
 }
 
-func (vm *VM) haltif(err error) {
+func (vm *VM) load(addr uint) int {
+	val, err := vm.memCore.load(addr)
 	if err != nil {
+		vm.halt(err)
+	}
+	return val
+}
+
+func (vm *VM) loadInto(addr uint, buf []int) {
+	if err := vm.memCore.loadInto(addr, buf); err != nil {
 		vm.halt(err)
 	}
 }
 
-func (vm *VM) load(addr uint) int {
-	if maxSize := vm.memLimit; maxSize != 0 && int(addr) > maxSize {
-		vm.halt(memLimitError{addr, "get"})
-	} else if addr >= uint(len(vm.mem)) {
-		return 0
+func (vm *VM) stor(addr uint, values ...int) {
+	if err := vm.memCore.stor(addr, values...); err != nil {
+		vm.halt(err)
 	}
-	// vm.logf("load %v <- @%v", vm.mem[addr], addr)
-	return vm.mem[addr]
-}
-
-func (vm *VM) stor(addr uint, val int) {
-	if addr >= uint(len(vm.mem)) {
-		const chunkSize = 256
-		size := (int(addr) + chunkSize) / chunkSize * chunkSize
-		if need := size - len(vm.mem); need > 0 {
-			if maxSize := vm.memLimit; maxSize != 0 && size > maxSize {
-				if int(addr) >= maxSize {
-					vm.halt(memLimitError{uint(size), "stor"})
-				}
-				size = maxSize
-			}
-			vm.mem = append(vm.mem, make([]int, need)...)
-		}
-	}
-	vm.mem[addr] = val
-	// vm.logf("stor %v -> @%v", val, addr)
 }
 
 func (vm *VM) loadProg() int {
@@ -83,32 +61,30 @@ func (vm *VM) pop() (val int) {
 	return val
 }
 
-func (vm *VM) pushr(addr uint) error {
+func (vm *VM) pushr(addr uint) {
 	r := uint(vm.load(1))
 	if retBase := uint(vm.load(10)); r < retBase {
-		return retUnderError(r)
+		vm.halt(retUnderError(r))
 	}
 	if memBase := uint(vm.load(11)); r >= memBase {
-		return retOverError(r)
+		vm.halt(retOverError(r))
 	}
 	vm.stor(r, int(addr))
 	vm.stor(1, int(r+1))
-	return nil
 }
 
-func (vm *VM) popr() (uint, error) {
+func (vm *VM) popr() uint {
 	r := uint(vm.load(1))
 	if retBase := uint(vm.load(10)); r == retBase {
 		vm.halt(nil)
 	} else if r < retBase {
-		return 0, retUnderError(r)
-	}
-	if memBase := uint(vm.load(11)); r > memBase {
-		return 0, retOverError(r)
+		vm.halt(retUnderError(r))
+	} else if memBase := uint(vm.load(11)); r > memBase {
+		vm.halt(retOverError(r))
 	}
 	r--
 	vm.stor(1, int(r))
-	return uint(vm.load(r)), nil
+	return uint(vm.load(r))
 }
 
 func (vm *VM) compile(val int) {
@@ -140,14 +116,15 @@ func (vm *VM) lookup(token string) uint {
 	return 0
 }
 
-func (vm *VM) literal(token string) (int, error) {
+func (vm *VM) literal(token string) int {
 	if n, err := strconv.ParseInt(token, 0, strconv.IntSize); err == nil {
-		return int(n), nil
+		return int(n)
 	}
 	if value, ok := runeLiteral(token); ok {
-		return int(value), nil
+		return int(value)
 	}
-	return 0, literalError(token)
+	vm.halt(literalError(token))
+	return 0
 }
 
 type ctl struct {
@@ -299,7 +276,9 @@ func (vm *VM) exec(ctx context.Context) error {
 func (vm *VM) wordOf(addr uint) (string, uint) {
 	for prev := vm.last; prev != 0; {
 		if prev < addr {
-			if name := vm.string(uint(vm.mem[prev+1])); name != "" {
+			if sym := uint(vm.load(prev + 1)); sym == 0 {
+				return "ø", addr - prev
+			} else if name := vm.string(sym); name != "" {
 				return name, addr - prev
 			}
 			break
@@ -319,7 +298,7 @@ func (vm *VM) codeName() string {
 		return fmt.Sprintf("call(%v)", code)
 	}
 	if code == vmCodePushint {
-		return fmt.Sprintf("pushint(%v)", vm.mem[vm.prog])
+		return fmt.Sprintf("pushint(%v)", vm.load(vm.prog))
 	}
 	return vmCodeNames[code]
 }
@@ -341,8 +320,7 @@ func (vm *VM) step() {
 		vm.logf(at, "% *v.% -*v r:%v s:%v",
 			vm.funcWidth, funcName,
 			vm.codeWidth, codeName,
-			vm.mem[vm.load(10):vm.load(1)],
-			vm.stack)
+			vm.rstack(), vm.stack)
 	}
 
 	if code := vm.loadProg(); code < len(vmCodeTable) {
@@ -352,21 +330,36 @@ func (vm *VM) step() {
 	}
 }
 
+func (vm *VM) rstack() []int {
+	rb := uint(vm.load(10))
+	r := uint(vm.load(1))
+	rstack := make([]int, r-rb)
+	vm.loadInto(rb, rstack)
+	return rstack
+}
+
+const (
+	defaultPageSize = 256
+	defaultRetBase  = 1 // in pages
+	defaultMemBase  = 4 // in pages
+)
+
 func (vm *VM) init() {
-	const (
-		defaultRetBase = 16
-		defaultMemBase = 32
-	)
+	pageSize := vm.pageSize
+	if pageSize == 0 {
+		pageSize = defaultPageSize
+		vm.pageSize = pageSize
+	}
 
 	retBase := uint(vm.load(10))
 	if retBase == 0 {
-		retBase = defaultRetBase
+		retBase = defaultRetBase * pageSize
 		vm.stor(10, int(retBase))
 	}
 
 	memBase := uint(vm.load(11))
 	if memBase == 0 {
-		memBase = defaultMemBase
+		memBase = defaultMemBase * pageSize
 		vm.stor(11, int(memBase))
 	}
 
@@ -407,15 +400,15 @@ func (vm *VM) scan() (token string) {
 
 	var sb strings.Builder
 	for {
-		r, err := vm.readRune()
-		vm.haltif(err)
-		if !unicode.IsControl(r) && !unicode.IsSpace(r) {
+		if r, err := vm.ioCore.readRune(); err != nil {
+			vm.halt(err)
+		} else if !unicode.IsControl(r) && !unicode.IsSpace(r) {
 			sb.WriteRune(r)
 			break
 		}
 	}
 	for {
-		r, err := vm.readRune()
+		r, err := vm.ioCore.readRune()
 		if err == io.EOF {
 			break
 		} else if err != nil {
@@ -428,6 +421,192 @@ func (vm *VM) scan() (token string) {
 	}
 	return sb.String()
 }
+
+func (vm *VM) writeRune(r rune) {
+	if err := writeRune(vm.out, r); err != nil {
+		vm.halt(err)
+	}
+}
+
+func (vm *VM) readRune() rune {
+	r, err := vm.ioCore.readRune()
+	for r == 0 {
+		if err != nil {
+			vm.halt(err)
+		}
+		r, err = vm.ioCore.readRune()
+	}
+	return r
+}
+
+type memCore struct {
+	pages [][]int
+	bases []uint
+
+	memLimit uint
+	pageSize uint
+}
+
+func (mem *memCore) memSize() uint {
+	if i := len(mem.bases) - 1; i >= 0 {
+		return mem.bases[i] + mem.pageSize
+	}
+	return 0
+}
+
+func (mem *memCore) load(addr uint) (int, error) {
+	if maxSize := mem.memLimit; maxSize != 0 && addr > maxSize {
+		return 0, memLimitError{addr, "get"}
+	}
+
+	if mem.pageSize == 0 || len(mem.pages) == 0 {
+		return 0, nil
+	}
+
+	pageBase := addr / mem.pageSize * mem.pageSize
+	pageAddr := addr % mem.pageSize
+	pageID := sort.Search(len(mem.bases), func(i int) bool {
+		return mem.bases[i] > pageBase
+	})
+	if pageID--; pageID < 0 || mem.bases[pageID] != pageBase {
+		return 0, nil
+	}
+
+	return mem.pages[pageID][pageAddr], nil
+}
+
+func (mem *memCore) loadInto(addr uint, buf []int) error {
+	if len(buf) == 0 {
+		return nil
+	}
+
+	end := addr + uint(len(buf))
+	if maxSize := mem.memLimit; maxSize != 0 && end > maxSize {
+		return memLimitError{end, "get"}
+	}
+	for i := range buf {
+		buf[i] = 0
+	}
+
+	if mem.pageSize == 0 || len(mem.pages) == 0 {
+		return nil
+	}
+
+	pageBase := addr / mem.pageSize * mem.pageSize
+	pageAddr := addr % mem.pageSize
+	pageID := sort.Search(len(mem.bases), func(i int) bool {
+		return mem.bases[i] > pageBase
+	})
+	if pageID--; pageID < 0 {
+		return nil
+	}
+
+	if mem.bases[pageID] != pageBase {
+		base := mem.bases[pageID]
+		if base > end {
+			return nil
+		}
+		buf = buf[base-addr:] // XXX
+		addr = base
+		pageAddr = 0
+	}
+
+	for {
+		if skip := mem.bases[pageID] - addr; skip > 0 {
+			addr += skip
+			buf = buf[skip:]
+			if len(buf) == 0 {
+				return nil
+			}
+		}
+
+		n := copy(buf, mem.pages[pageID][pageAddr:])
+		buf = buf[n:]
+		if len(buf) == 0 {
+			return nil
+		}
+		addr += uint(n)
+		pageID++
+		pageAddr = 0
+		if pageID >= len(mem.bases) || mem.bases[pageID] > end {
+			return nil
+		}
+	}
+}
+
+func (mem *memCore) stor(addr uint, values ...int) error {
+	if mem.pageSize == 0 {
+		mem.pageSize = defaultPageSize
+	}
+
+	var pageID int
+	var pageAddr uint
+	pageBase := addr / mem.pageSize * mem.pageSize
+	pageAddr = addr % mem.pageSize
+	if addr >= mem.memSize() {
+		pageID = len(mem.bases)
+		mem.bases = append(mem.bases, pageBase)
+		mem.pages = append(mem.pages, make([]int, mem.pageSize))
+	} else {
+		pageID = sort.Search(len(mem.bases), func(i int) bool {
+			return mem.bases[i] > pageBase
+		})
+		if mem.bases[pageID-1] == pageBase {
+			pageID--
+		} else if pageID >= len(mem.bases) {
+			panic("inconceivable: shouldn't be possible, since addr under memSize")
+		} else {
+			mem.bases = append(mem.bases, 0)
+			mem.pages = append(mem.pages, nil)
+			copy(mem.bases[pageID+1:], mem.bases[pageID:])
+			copy(mem.pages[pageID+1:], mem.pages[pageID:])
+			mem.bases[pageID] = pageBase
+			mem.pages[pageID] = make([]int, mem.pageSize)
+		}
+	}
+
+	if len(values) == 0 {
+		return nil
+	}
+
+	for {
+		n := copy(mem.pages[pageID][pageAddr:], values)
+		values = values[n:]
+		if len(values) == 0 {
+			break
+		}
+		addr += uint(n)
+		pageID++
+		pageBase += mem.pageSize
+		pageAddr = 0
+
+		if pageID >= len(mem.bases) {
+			mem.bases = append(mem.bases, 0)
+			mem.pages = append(mem.pages, nil)
+		} else if mem.bases[pageID] > addr {
+			mem.bases = append(mem.bases, 0)
+			mem.pages = append(mem.pages, nil)
+			copy(mem.bases[pageID+1:], mem.bases[pageID:])
+			copy(mem.pages[pageID+1:], mem.pages[pageID:])
+		} else {
+			continue
+		}
+		mem.bases[pageID] = pageBase
+		mem.pages[pageID] = make([]int, mem.pageSize)
+	}
+
+	return nil
+}
+
+type vmHaltError struct{ error }
+
+func (err vmHaltError) Error() string {
+	if err.error != nil {
+		return fmt.Sprintf("VM halted: %v", err.error)
+	}
+	return "VM halted"
+}
+func (err vmHaltError) Unwrap() error { return err.error }
 
 type progError uint
 type retOverError uint
@@ -502,12 +681,30 @@ func isolate(name string, f func() error) error {
 	return <-errch
 }
 
+func isolateTestRun(t *testing.T, name string, f func(t *testing.T)) bool {
+	return t.Run(name, func(t *testing.T) {
+		if err := isolate(t.Name(), func() error {
+			f(t)
+			return nil
+		}); err != nil {
+			t.Logf("%+v", err)
+			t.Fail()
+		}
+	})
+}
+
 func recoverExitError(name string, errch chan<- error) {
 	select {
-	case errch <- fmt.Errorf("%v called runtime.Goexit", name):
+	case errch <- exitError(name):
 	default:
 		// assumes that that the happy path does a (maybe nil) send
 	}
+}
+
+type exitError string
+
+func (name exitError) Error() string {
+	return fmt.Sprintf("%v called runtime.Goexit", string(name))
 }
 
 func recoverPanicError(name string, errch chan<- error) {

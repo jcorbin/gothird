@@ -29,19 +29,13 @@ type VM struct {
 	// Main memory is a large array of ints.  When we speak of addresses, we
 	// actually mean indices into main memory.  Main memory is used for two
 	// things, primarily: the return stack and the dictionary.
-	mem []int
-
-	memLimit int
+	memCore
 }
 
 // The return stack is a LIFO data structure, independent of the
 // above-mentioned "the stack", which is used by FIRST to keep track of
 // function call return addresses.
-func (vm *VM) call(addr uint) {
-	// vm.logf("call %v from %v", addr, vm.prog)
-	vm.haltif(vm.pushr(vm.prog))
-	vm.prog = addr
-}
+func (vm *VM) call(addr uint) { vm.pushr(vm.prog); vm.prog = addr }
 
 // The dictionary is a list of words.  Each word contains a header and a data
 // field.  In the header is the address of the previous word, an index into the
@@ -109,19 +103,11 @@ func (vm *VM) set() { addr := uint(vm.pop()); vm.stor(addr, vm.pop()) }
 
 // Name    Function
 // echo    write top of stack to output as a rune
-func (vm *VM) echo() { vm.haltif(writeRune(vm.out, rune(vm.pop()))) }
+func (vm *VM) echo() { vm.writeRune(rune(vm.pop())) }
 
 // Name    Function
 // key     read a rune from input onto top of stack
-
-func (vm *VM) key() {
-	r, err := vm.readRune()
-	for r == 0 {
-		vm.haltif(err)
-		r, err = vm.readRune()
-	}
-	vm.push(int(r))
-}
+func (vm *VM) key() { vm.push(int(vm.readRune())) }
 
 // Name    Function
 // _read   read a space-delimited word, find it in the dictionary, and compile
@@ -136,8 +122,7 @@ func (vm *VM) read() {
 		return
 	}
 
-	val, err := vm.literal(token)
-	vm.haltif(err)
+	val := vm.literal(token)
 	vm.logf(".", "read pushint(%v)", val)
 	vm.compile(vmCodePushint)
 	vm.compile(int(val))
@@ -151,12 +136,7 @@ func (vm *VM) read() {
 // Name   Function
 // exit   leave the current function: pop the return stack
 //        into the program counter
-func (vm *VM) exit() {
-	addr, err := vm.popr()
-	vm.haltif(err)
-	// vm.logf("return to %v from %v", addr, vm.prog)
-	vm.prog = addr
-}
+func (vm *VM) exit() { vm.prog = vm.popr() }
 
 //// Immediate (compilation) Operations
 
@@ -229,7 +209,7 @@ func (vm *VM) pushint() { vm.push(vm.loadProg()) }
 // appended to the dictionary.
 func (vm *VM) compileme() {
 	addr := vm.prog
-	if vm.mem[addr] == vmCodeRun {
+	if vm.load(addr) == vmCodeRun {
 		addr++
 	}
 	vm.compile(int(addr))
@@ -296,13 +276,13 @@ const (
 
 func (vm *VM) compileBuiltins() {
 	vm.define()
-	vm.mem[vm.last+2] = vmCodeCompIt // compile inline
+	vm.stor(vm.last+2, vmCodeCompIt) // compile inline
 	vm.compile(vmCodeExit)
 	vm.immediate() // write the vmCodeExit token over the prior vmCodeRun
 
 	for code := vmCodeDefine; code <= vmCodeLastBuiltin; code++ {
 		vm.define()
-		vm.mem[vm.last+2] = vmCodeCompIt // compile inline
+		vm.stor(vm.last+2, vmCodeCompIt) // compile inline
 		if code <= vmCodeImmediate {
 			vm.immediate()
 		}

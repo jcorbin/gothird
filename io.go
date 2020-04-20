@@ -629,14 +629,14 @@ func (dump *vmDumper) dumpStack() {
 
 func (dump *vmDumper) dumpMem() {
 	if dump.addrWidth == 0 {
-		dump.addrWidth = len(strconv.Itoa(len(dump.vm.mem))) + 1
+		dump.addrWidth = len(strconv.Itoa(int(dump.vm.memSize()))) + 1
 	}
 	if dump.words == nil {
 		dump.scanWords()
 	}
 	dump.wordID = len(dump.words) - 1
 	var buf bytes.Buffer
-	for addr := uint(0); addr < uint(len(dump.vm.mem)); {
+	for addr := uint(0); addr < uint(dump.vm.memSize()); {
 		buf.Reset()
 		fmt.Fprintf(&buf, "@% *v ", dump.addrWidth, addr)
 		n := buf.Len()
@@ -652,7 +652,7 @@ func (dump *vmDumper) dumpMem() {
 }
 
 func (dump *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
-	val := dump.vm.mem[addr]
+	val := dump.vm.load(addr)
 
 	// low memory addresses
 	if addr <= 11 {
@@ -671,17 +671,17 @@ func (dump *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
 	}
 
 	// other pre-return-stack addresses
-	retBase := uint(dump.vm.mem[10])
+	retBase := uint(dump.vm.load(10))
 	if addr < retBase {
 		buf.WriteString(strconv.Itoa(val))
 		return addr + 1
 	}
 
 	// return stack addresses
-	memBase := uint(dump.vm.mem[11])
+	memBase := uint(dump.vm.load(11))
 	if addr < memBase {
-		if r := uint(dump.vm.mem[1]); addr < r {
-			buf.WriteString(strconv.Itoa(dump.vm.mem[addr]))
+		if r := uint(dump.vm.load(1)); addr < r {
+			buf.WriteString(strconv.Itoa(dump.vm.load(addr)))
 			buf.WriteString(" ret_")
 			buf.WriteString(strconv.Itoa(int(addr - retBase)))
 		}
@@ -690,14 +690,13 @@ func (dump *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
 
 	// dictionary words
 	if word := dump.word(); word != 0 && addr == word {
-
 		buf.WriteString(": ")
 		addr++
 
-		dump.formatName(buf, dump.vm.mem[addr])
+		dump.formatName(buf, dump.vm.load(addr))
 		addr++
 
-		switch code := uint(dump.vm.mem[addr]); code {
+		switch code := uint(dump.vm.load(addr)); code {
 		case vmCodeCompile, vmCodeCompIt:
 			addr++
 		default:
@@ -707,7 +706,7 @@ func (dump *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
 
 		nextWord := dump.nextWord()
 		if nextWord == 0 {
-			nextWord = uint(dump.vm.mem[0])
+			nextWord = uint(dump.vm.load(0))
 		}
 		for addr < nextWord {
 			buf.WriteByte(' ')
@@ -719,7 +718,9 @@ func (dump *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
 		}
 
 		if dump.rawWords {
-			fmt.Fprintf(buf, "\n % *v %v", dump.addrWidth, "", dump.vm.mem[word:addr])
+			code := make([]int, addr-word)
+			dump.vm.loadInto(word, code)
+			fmt.Fprintf(buf, "\n % *v %v", dump.addrWidth, "", code)
 		}
 
 		return addr
@@ -734,7 +735,7 @@ func (dump *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
 }
 
 func (dump *vmDumper) formatCode(buf fmtBuf, addr uint) uint {
-	code := dump.vm.mem[addr]
+	code := dump.vm.load(addr)
 	addr++
 
 	// builtin code
@@ -742,7 +743,7 @@ func (dump *vmDumper) formatCode(buf fmtBuf, addr uint) uint {
 		buf.WriteString(vmCodeNames[code])
 		if code == vmCodePushint {
 			buf.WriteByte('(')
-			buf.WriteString(strconv.Itoa(dump.vm.mem[addr]))
+			buf.WriteString(strconv.Itoa(dump.vm.load(addr)))
 			buf.WriteByte(')')
 			addr++
 		}
@@ -754,7 +755,7 @@ func (dump *vmDumper) formatCode(buf fmtBuf, addr uint) uint {
 		return dump.words[i] < uint(code)
 	}); i < len(dump.words) {
 		word := dump.words[i]
-		dump.formatName(buf, dump.vm.mem[word+1])
+		dump.formatName(buf, dump.vm.load(word+1))
 		if offset := uint(code) - word; offset > 0 {
 			buf.WriteByte('+')
 			buf.WriteString(strconv.Itoa(int(offset)))
@@ -779,11 +780,11 @@ func (dump *vmDumper) formatName(buf fmtBuf, sym int) {
 
 func (dump *vmDumper) scanWords() {
 	for word := dump.vm.last; word != 0; {
-		if word >= uint(len(dump.vm.mem)) {
+		if word >= uint(dump.vm.memSize()) {
 			return
 		}
 		dump.words = append(dump.words, word)
-		word = uint(dump.vm.mem[word])
+		word = uint(dump.vm.load(word))
 	}
 }
 

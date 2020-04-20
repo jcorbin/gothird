@@ -17,13 +17,13 @@ func main() {
 		retBase              = 16
 		memBase              = 80
 		kernel   io.WriterTo = thirdKernel
-		memLimit int
+		memLimit uint
 		timeout  time.Duration
 		trace    bool
 		dump     bool
 	)
 
-	flag.IntVar(&memLimit, "mem-limit", 0, "enable memory limit")
+	flag.UintVar(&memLimit, "mem-limit", 0, "enable memory limit")
 	flag.DurationVar(&timeout, "timeout", 0, "specify a time limit")
 	flag.BoolVar(&trace, "trace", false, "enable trace logging")
 	flag.BoolVar(&dump, "dump", false, "print a dump after execution")

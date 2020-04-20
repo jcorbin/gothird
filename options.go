@@ -30,12 +30,12 @@ func (logfn withLogfn) apply(vm *VM) {
 type inputOption struct{ io.Reader }
 type outputOption struct{ io.Writer }
 type teeOption struct{ io.Writer }
-type memLimitOption int
+type memLimitOption uint
 
-func withInput(r io.Reader) inputOption     { return inputOption{r} }
-func withOutput(w io.Writer) outputOption   { return outputOption{w} }
-func withTee(w io.Writer) teeOption         { return teeOption{w} }
-func withMemLimit(limit int) memLimitOption { return memLimitOption(limit) }
+func withInput(r io.Reader) inputOption      { return inputOption{r} }
+func withOutput(w io.Writer) outputOption    { return outputOption{w} }
+func withTee(w io.Writer) teeOption          { return teeOption{w} }
+func withMemLimit(limit uint) memLimitOption { return memLimitOption(limit) }
 
 func withInputWriter(wto io.WriterTo) pipeInput {
 	r, w := io.Pipe()
@@ -62,7 +62,7 @@ func (o teeOption) apply(vm *VM) {
 }
 
 func (lim memLimitOption) apply(vm *VM) {
-	vm.memLimit = int(lim)
+	vm.memLimit = uint(lim)
 }
 
 type memLayoutOption struct {
