@@ -549,58 +549,57 @@ func (mem *memCore) stor(addr uint, values ...int) error {
 		mem.pageSize = defaultPageSize
 	}
 
-	var pageID int
-	var pageAddr uint
-	pageBase := addr / mem.pageSize * mem.pageSize
-	pageAddr = addr % mem.pageSize
-	if addr >= mem.memSize() {
-		pageID = len(mem.bases)
-		mem.bases = append(mem.bases, pageBase)
-		mem.pages = append(mem.pages, make([]int, mem.pageSize))
-	} else {
-		pageID = sort.Search(len(mem.bases), func(i int) bool {
-			return mem.bases[i] > pageBase
-		})
-		if mem.bases[pageID-1] == pageBase {
-			pageID--
-		} else if pageID >= len(mem.bases) {
-			panic("inconceivable: shouldn't be possible, since addr under memSize")
-		} else {
+	pageID := sort.Search(len(mem.bases), func(i int) bool {
+		return mem.bases[i] > addr
+	})
+	if pageID > 0 {
+		pageID--
+	}
+
+	for ; addr < end; pageID++ {
+		if pageID == len(mem.bases) {
+			base := addr / mem.pageSize * mem.pageSize
+			size := mem.pageSize
+			if i := len(mem.bases) - 1; i >= 0 {
+				lastEnd := mem.bases[i] + uint(len(mem.pages[i]))
+				if base < lastEnd {
+					size -= lastEnd - base
+					base = lastEnd
+				}
+			}
+			mem.bases = append(mem.bases, base)
+			mem.pages = append(mem.pages, make([]int, size))
+		}
+
+		base := mem.bases[pageID]
+		if addr < base {
+			nextBase := base
+			base = addr / mem.pageSize * mem.pageSize
+			size := mem.pageSize
+			if gapSize := nextBase - base; size > gapSize {
+				size = gapSize
+			}
 			mem.bases = append(mem.bases, 0)
 			mem.pages = append(mem.pages, nil)
 			copy(mem.bases[pageID+1:], mem.bases[pageID:])
 			copy(mem.pages[pageID+1:], mem.pages[pageID:])
-			mem.bases[pageID] = pageBase
-			mem.pages[pageID] = make([]int, mem.pageSize)
+			mem.bases[pageID] = base
+			mem.pages[pageID] = make([]int, size)
 		}
-	}
 
-	for {
-		n := copy(mem.pages[pageID][pageAddr:], values)
+		page := mem.pages[pageID]
+		if skip := int(addr) - int(base); skip > 0 {
+			if skip >= len(page) {
+				continue
+			}
+			base += uint(skip)
+			page = page[skip:]
+		}
+
+		n := copy(page, values)
 		values = values[n:]
-		if len(values) == 0 {
-			break
-		}
 		addr += uint(n)
-		pageID++
-		pageBase += mem.pageSize
-		pageAddr = 0
-
-		if pageID >= len(mem.bases) {
-			mem.bases = append(mem.bases, 0)
-			mem.pages = append(mem.pages, nil)
-		} else if mem.bases[pageID] > addr {
-			mem.bases = append(mem.bases, 0)
-			mem.pages = append(mem.pages, nil)
-			copy(mem.bases[pageID+1:], mem.bases[pageID:])
-			copy(mem.pages[pageID+1:], mem.pages[pageID:])
-		} else {
-			continue
-		}
-		mem.bases[pageID] = pageBase
-		mem.pages[pageID] = make([]int, mem.pageSize)
 	}
-
 	return nil
 }
 
