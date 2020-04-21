@@ -628,6 +628,9 @@ func (dump *vmDumper) dumpStack() {
 }
 
 func (dump *vmDumper) dumpMem() {
+	retBase := uint(dump.vm.load(10))
+	memBase := uint(dump.vm.load(11))
+
 	if dump.addrWidth == 0 {
 		dump.addrWidth = len(strconv.Itoa(int(dump.vm.memSize()))) + 1
 	}
@@ -635,17 +638,26 @@ func (dump *vmDumper) dumpMem() {
 		dump.scanWords()
 	}
 	dump.wordID = len(dump.words) - 1
-	var buf bytes.Buffer
+	var buf lineBuffer
 	for addr := uint(0); addr < uint(dump.vm.memSize()); {
-		buf.Reset()
+		// section headers
+		switch addr {
+		case retBase:
+			fmt.Fprintf(&buf, "# Return Stack @%v", retBase)
+		case memBase:
+			fmt.Fprintf(&buf, "# Main Memory @%v", memBase)
+		}
+		if buf.Len() > 0 {
+			buf.WriteTo(dump.out)
+		}
+
 		fmt.Fprintf(&buf, "@% *v ", dump.addrWidth, addr)
 		n := buf.Len()
 
 		addr = dump.formatMem(&buf, addr)
-		if buf.Len() != n {
-			if b := buf.Bytes(); b[len(b)-1] != '\n' {
-				buf.WriteByte('\n')
-			}
+		if buf.Len() == n {
+			buf.Reset()
+		} else {
 			buf.WriteTo(dump.out)
 		}
 	}
@@ -673,7 +685,9 @@ func (dump *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
 	// other pre-return-stack addresses
 	retBase := uint(dump.vm.load(10))
 	if addr < retBase {
-		buf.WriteString(strconv.Itoa(val))
+		if val != 0 {
+			buf.WriteString(strconv.Itoa(val))
+		}
 		return addr + 1
 	}
 
