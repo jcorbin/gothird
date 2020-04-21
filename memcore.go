@@ -27,13 +27,9 @@ func (mem *memCore) load(addr uint) (int, error) {
 	}
 
 	pageID := mem.findPage(addr)
-	if pageID < 0 {
-		return 0, nil
-	}
-
 	base := mem.bases[pageID]
 	page := mem.pages[pageID]
-	if i := addr - base; int(i) < len(page) {
+	if i := int(addr) - int(base); 0 <= i && i < len(page) {
 		return page[i], nil
 	}
 
@@ -56,13 +52,7 @@ func (mem *memCore) loadInto(addr uint, buf []int) error {
 		return nil
 	}
 
-	pageID := mem.findPage(addr)
-
-	if pageID < 0 {
-		return nil
-	}
-
-	for ; addr < end && pageID < len(mem.bases); pageID++ {
+	for pageID := mem.findPage(addr); addr < end && pageID < len(mem.bases); pageID++ {
 		base := mem.bases[pageID]
 		if base > end {
 			break
