@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"runtime/debug"
-	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -463,10 +462,8 @@ func (mem *memCore) load(addr uint) (int, error) {
 		return 0, nil
 	}
 
-	pageID := sort.Search(len(mem.bases), func(i int) bool {
-		return mem.bases[i] > addr
-	})
-	if pageID--; pageID < 0 {
+	pageID := mem.findPage(addr)
+	if pageID < 0 {
 		return 0, nil
 	}
 
@@ -495,10 +492,9 @@ func (mem *memCore) loadInto(addr uint, buf []int) error {
 		return nil
 	}
 
-	pageID := sort.Search(len(mem.bases), func(i int) bool {
-		return mem.bases[i] > addr
-	})
-	if pageID--; pageID < 0 {
+	pageID := mem.findPage(addr)
+
+	if pageID < 0 {
 		return nil
 	}
 
@@ -549,14 +545,7 @@ func (mem *memCore) stor(addr uint, values ...int) error {
 		mem.pageSize = defaultPageSize
 	}
 
-	pageID := sort.Search(len(mem.bases), func(i int) bool {
-		return mem.bases[i] > addr
-	})
-	if pageID > 0 {
-		pageID--
-	}
-
-	for ; addr < end; pageID++ {
+	for pageID := mem.findPage(addr); addr < end; pageID++ {
 		if pageID == len(mem.bases) {
 			base := addr / mem.pageSize * mem.pageSize
 			size := mem.pageSize
@@ -601,6 +590,19 @@ func (mem *memCore) stor(addr uint, values ...int) error {
 		addr += uint(n)
 	}
 	return nil
+}
+
+func (mem *memCore) findPage(addr uint) int {
+	i, j := 0, len(mem.bases)
+	for i < j {
+		h := int(uint(i+j)>>1) + 1
+		if h < len(mem.bases) && mem.bases[h] <= addr {
+			i = h
+		} else {
+			j = h - 1
+		}
+	}
+	return i
 }
 
 type vmHaltError struct{ error }
