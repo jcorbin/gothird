@@ -694,7 +694,7 @@ func (dump *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
 	// return stack addresses
 	memBase := uint(dump.vm.load(11))
 	if addr < memBase {
-		if r := uint(dump.vm.load(1)); addr < r {
+		if r := uint(dump.vm.load(1)); addr <= r {
 			buf.WriteString(strconv.Itoa(dump.vm.load(addr)))
 			buf.WriteString(" ret_")
 			buf.WriteString(strconv.Itoa(int(addr - retBase)))

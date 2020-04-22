@@ -62,28 +62,29 @@ func (vm *VM) pop() (val int) {
 
 func (vm *VM) pushr(addr uint) {
 	r := uint(vm.load(1))
-	if retBase := uint(vm.load(10)); r < retBase {
+	if retBase := uint(vm.load(10)); r < retBase-1 {
 		vm.halt(retUnderError(r))
 	}
-	if memBase := uint(vm.load(11)); r >= memBase {
+	if memBase := uint(vm.load(11)); r >= memBase-1 {
 		vm.halt(retOverError(r))
 	}
+	r++
 	vm.stor(r, int(addr))
-	vm.stor(1, int(r+1))
+	vm.stor(1, int(r))
 }
 
 func (vm *VM) popr() uint {
 	r := uint(vm.load(1))
-	if retBase := uint(vm.load(10)); r == retBase {
+	if retBase := uint(vm.load(10)); r == retBase-1 {
 		vm.halt(nil)
-	} else if r < retBase {
+	} else if r < retBase-1 {
 		vm.halt(retUnderError(r))
-	} else if memBase := uint(vm.load(11)); r > memBase {
+	} else if memBase := uint(vm.load(11)); r > memBase-1 {
 		vm.halt(retOverError(r))
 	}
-	r--
-	vm.stor(1, int(r))
-	return uint(vm.load(r))
+	val := uint(vm.load(r))
+	vm.stor(1, int(r-1))
+	return val
 }
 
 func (vm *VM) compile(val int) {
@@ -316,10 +317,12 @@ func (vm *VM) step() {
 			vm.codeWidth = len(codeName)
 		}
 
-		vm.logf(at, "% *v.% -*v r:%v s:%v",
+		vm.logf(at, "% *v.% -*v s:%v r:%v",
 			vm.funcWidth, funcName,
 			vm.codeWidth, codeName,
-			vm.rstack(), vm.stack)
+			vm.stack,
+			vm.rstack(),
+		)
 	}
 
 	if code := vm.loadProg(); code < len(vmCodeTable) {
@@ -332,7 +335,12 @@ func (vm *VM) step() {
 func (vm *VM) rstack() []int {
 	rb := uint(vm.load(10))
 	r := uint(vm.load(1))
-	rstack := make([]int, r-rb)
+	if r < rb-1 {
+		vm.halt(retUnderError(r))
+	} else if r < rb {
+		return nil
+	}
+	rstack := make([]int, r-rb+1)
 	vm.loadInto(rb, rstack)
 	return rstack
 }
@@ -367,7 +375,7 @@ func (vm *VM) init() {
 	}
 
 	if r := uint(vm.load(1)); r == 0 {
-		vm.stor(1, int(retBase))
+		vm.stor(1, int(retBase-1))
 	} else if r < retBase {
 		vm.halt(retUnderError(r))
 	} else if r > memBase {

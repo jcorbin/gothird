@@ -66,12 +66,6 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 	line(`: main immediate ]`)
 	line(`main`)
 
-	// NOTE inserted to reset the return stack
-	// TODO also clear the data stack
-	line(`: rb 10 exit`)
-	line(`: reboot immediate rb @ r ! ]`)
-	line(`reboot`)
-
 	// Next, we want to define some temporary variables for locations
 	// 3, 4, and 5, since this'll make our code look clearer.
 	line(`: _x  3 @ exit`)
