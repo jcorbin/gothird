@@ -190,164 +190,164 @@ func Test_VM(t *testing.T) {
 		// input one character
 		vmTest("key^2 => echo^2").withInput("ab").do(key, key, echo, echo).expectOutput("ba"),
 	)
+}
 
-	testCases = append(testCases, vmTest("builtin setup").withInput(`
+type kernel struct {
+	names  []string
+	inputs []string
+	tests  vmTestCases
+}
+
+func (k *kernel) addSource(
+	name, input, test string,
+	wraps ...func(vmTestCase) vmTestCase,
+) {
+	const tronCode = `
+		: _flags! rb @ 1 - ! exit
+		: _tron  immediate 1 _flags! exit
+		: _troff immediate 0 _flags! exit
+		_tron`
+
+	vmt := vmTest(name)
+	for i, name := range k.names {
+		vmt = vmt.withNamedInput("kernel_"+name, k.inputs[i])
+	}
+	vmt = vmt.withNamedInput(name, input)
+	if len(test) > 0 {
+		vmt = vmt.
+			withNamedInput("tron", tronCode).
+			withNamedInput("kernel_"+name+"_test", test)
+	}
+	vmt = vmt.apply(wraps...)
+
+	k.names = append(k.names, name)
+	k.inputs = append(k.inputs, input)
+	k.tests = append(k.tests, vmt)
+}
+
+func Test_kernel(t *testing.T) {
+	var k kernel
+
+	k.addSource("builtins", `
 		exit : immediate _read @ ! - * / <0 echo key pick
-	`).
-		expectWord(1024, "", vmCodeRun, vmCodeRead, 1027, vmCodeExit).
-		expectWord(1030, "exit", vmCodeCompIt, vmCodeExit).
-		expectWord(1034, ":", vmCodeDefine, vmCodeExit).
-		expectWord(1038, "immediate", vmCodeImmediate, vmCodeExit).
-		expectWord(1042, "_read", vmCodeCompIt, vmCodeRead, vmCodeExit).
-		expectDump(lines(
-			`# VM Dump`,
-			`  prog: 1028`,
-			`  dict: [1087 1082 1077 1072 1067 1062 1057 1052 1047 1042 1038 1034 1030 1024]`,
-			`  stack: []`,
-			`  @    0 1092 dict`,
-			`  @    1 255 ret`,
-			`  @    2 0`,
-			`  @    3 0`,
-			`  @    4 0`,
-			`  @    5 0`,
-			`  @    6 0`,
-			`  @    7 0`,
-			`  @    8 0`,
-			`  @    9 0`,
-			`  @   10 256 retBase`,
-			`  @   11 1024 memBase`,
+	`, "", func(vmt vmTestCase) vmTestCase {
+		return vmt.
+			expectWord(1024, "", vmCodeRun, vmCodeRead, 1027, vmCodeExit).
+			expectWord(1030, "exit", vmCodeCompIt, vmCodeExit).
+			expectWord(1034, ":", vmCodeDefine, vmCodeExit).
+			expectWord(1038, "immediate", vmCodeImmediate, vmCodeExit).
+			expectWord(1042, "_read", vmCodeCompIt, vmCodeRead, vmCodeExit).
+			expectDump(lines(
+				`# VM Dump`,
+				`  prog: 1028`,
+				`  dict: [1087 1082 1077 1072 1067 1062 1057 1052 1047 1042 1038 1034 1030 1024]`,
+				`  stack: []`,
+				`  @    0 1092 dict`,
+				`  @    1 255 ret`,
+				`  @    2 0`,
+				`  @    3 0`,
+				`  @    4 0`,
+				`  @    5 0`,
+				`  @    6 0`,
+				`  @    7 0`,
+				`  @    8 0`,
+				`  @    9 0`,
+				`  @   10 256 retBase`,
+				`  @   11 1024 memBase`,
 
-			`# Return Stack @256`,
+				`# Return Stack @256`,
 
-			`# Main Memory @1024`,
-			`  @ 1024 : ø immediate runme read ø+3 exit`,
-			`  @ 1030 : exit exit`,
-			`  @ 1034 : : immediate define exit`,
-			`  @ 1038 : immediate immediate immediate exit`,
-			`  @ 1042 : _read read exit`,
-			`  @ 1047 : @ get exit`,
-			`  @ 1052 : ! set exit`,
-			`  @ 1057 : - sub exit`,
-			`  @ 1062 : * mul exit`,
-			`  @ 1067 : / div exit`,
-			`  @ 1072 : <0 under0 exit`,
-			`  @ 1077 : echo echo exit`,
-			`  @ 1082 : key key exit`,
-			`  @ 1087 : pick pick exit`,
-		)))
+				`# Main Memory @1024`,
+				`  @ 1024 : ø immediate runme read ø+3 exit`,
+				`  @ 1030 : exit exit`,
+				`  @ 1034 : : immediate define exit`,
+				`  @ 1038 : immediate immediate immediate exit`,
+				`  @ 1042 : _read read exit`,
+				`  @ 1047 : @ get exit`,
+				`  @ 1052 : ! set exit`,
+				`  @ 1057 : - sub exit`,
+				`  @ 1062 : * mul exit`,
+				`  @ 1067 : / div exit`,
+				`  @ 1072 : <0 under0 exit`,
+				`  @ 1077 : echo echo exit`,
+				`  @ 1082 : key key exit`,
+				`  @ 1087 : pick pick exit`,
+			))
+	})
 
-	// better main loop
-	testCases = append(testCases, vmTest("new main").withInput(`
-		exit : immediate _read @ ! - * / <0 echo key pick
+	k.addSource("main", `
+		: r 1 exit
 
 		: ]
-			1 @
-			1 -
-			1 !
-			_read
-			]
+			r @
+			r -
+			r !
+			_read ]
 
-		: main immediate ]
-		main
-	`).expectMemAt(1092,
-		/* @1092 */ 1087,
-		/* @1093 */ 14,
-		/* @1094 */ vmCodeCompile,
-		/* @1095 */ vmCodeRun,
-		/* @1096 */ vmCodePushint, 1, vmCodeGet,
-		/* @1099 */ vmCodePushint, 1, vmCodeSub,
-		/* @1102 */ vmCodePushint, 1, vmCodeSet,
-		/* @1105 */ vmCodeRead,
-		/* @1106 */ 1096,
-	).expectMemAt(1107,
-		/* @1107 */ 1092,
-		/* @1108 */ 15,
-		/* @1109 */ vmCodeRun,
-		/* @1110 */ 1096,
-	).expectDump(lines(
-		`# VM Dump`,
-		`  prog: 1106`,
-		`  dict: [1107 1092 1087 1082 1077 1072 1067 1062 1057 1052 1047 1042 1038 1034 1030 1024]`,
-		`  stack: []`,
-		`  @    0 1111 dict`,
-		`  @    1 268 ret`,
-		`  @    2 0`,
-		`  @    3 0`,
-		`  @    4 0`,
-		`  @    5 0`,
-		`  @    6 0`,
-		`  @    7 0`,
-		`  @    8 0`,
-		`  @    9 0`,
-		`  @   10 256 retBase`,
-		`  @   11 1024 memBase`,
+		: main immediate ] main
 
-		`# Return Stack @256`,
-		`  @  256 1029 ret_0`,
-		`  @  257 1029 ret_1`,
-		`  @  258 1029 ret_2`,
-		`  @  259 1029 ret_3`,
-		`  @  260 1029 ret_4`,
-		`  @  261 1029 ret_5`,
-		`  @  262 1029 ret_6`,
-		`  @  263 1029 ret_7`,
-		`  @  264 1029 ret_8`,
-		`  @  265 1029 ret_9`,
-		`  @  266 1029 ret_10`,
-		`  @  267 1029 ret_11`,
-		`  @  268 1028 ret_12`,
+		: rb 10 exit
+	`, `
+		: test immediate
+			rb @
+		test
+	`, func(vmt vmTestCase) vmTestCase {
+		return vmt.
+			expectWord(1092, "r",
+				/* 1094 */ vmCodeCompile, vmCodeRun,
+				/* 1096 */ vmCodePushint, 1,
+				/* 1098 */ vmCodeExit,
+			).
+			expectWord(1099, "]",
+				/* @1101 */ vmCodeCompile,
+				/* @1102 */ vmCodeRun,
+				/* @1103 */ 1096, vmCodeGet,
+				/* @1105 */ 1096, vmCodeSub,
+				/* @1107 */ 1096, vmCodeSet,
+				/* @1109 */ vmCodeRead,
+				/* @1110 */ 1103,
+			).
+			expectWord(1111, "main",
+				/* @1113 */ vmCodeRun,
+				/* @1114 */ 1103,
+			).
+			expectWord(1115, "rb",
+				/* 1117 */ vmCodeCompile, vmCodeRun,
+				/* 1119 */ vmCodePushint, 10,
+				/* 1121 */ vmCodeExit,
+			).
+			expectStack(256)
+	})
 
-		`# Main Memory @1024`,
-		`  @ 1024 : ø immediate runme read ø+3 exit`,
-		`  @ 1030 : exit exit`,
-		`  @ 1034 : : immediate define exit`,
-		`  @ 1038 : immediate immediate immediate exit`,
-		`  @ 1042 : _read read exit`,
-		`  @ 1047 : @ get exit`,
-		`  @ 1052 : ! set exit`,
-		`  @ 1057 : - sub exit`,
-		`  @ 1062 : * mul exit`,
-		`  @ 1067 : / div exit`,
-		`  @ 1072 : <0 under0 exit`,
-		`  @ 1077 : echo echo exit`,
-		`  @ 1082 : key key exit`,
-		`  @ 1087 : pick pick exit`,
-		`  @ 1092 : ] runme pushint(1) get pushint(1) sub pushint(1) set read ]+4`,
-		`  @ 1107 : main immediate runme ]+4`,
-	)))
-
-	testCases = append(testCases, vmTest("add").withInput(`
-		exit : immediate _read @ ! - * / < echo key pick
-		: ] 1 @ 1 - 1 ! _read ]
-		: main immediate ]
-		main
-
+	k.addSource("add", `
 		: _x  3 @ exit
 		: _x! 3 ! exit
 		: + _x! 0 _x - - exit
-
+	`, `
 		: test immediate
 			3 5 7 + +
 		test
-	`).expectWord(1111, "_x", vmCodeCompile, vmCodeRun,
-		vmCodePushint, 3, vmCodeGet, vmCodeExit,
-	).expectWord(1119, "_x!", vmCodeCompile, vmCodeRun,
-		vmCodePushint, 3, vmCodeSet, vmCodeExit,
-	).expectWord(1127, "+", vmCodeCompile, vmCodeRun,
-		1123, // _x!
-		vmCodePushint, 0,
-		1115, // _x
-		vmCodeSub, vmCodeSub, vmCodeExit,
-	).expectStack(3+5+7))
+	`, func(vmt vmTestCase) vmTestCase {
+		return vmt.
+			expectWord(1122, "_x",
+				/* 1124 */ vmCodeCompile, vmCodeRun,
+				/* 1126 */ vmCodePushint, 3, vmCodeGet,
+				/* 1129 */ vmCodeExit).
+			expectWord(1130, "_x!",
+				/* 1132 */ vmCodeCompile, vmCodeRun,
+				/* 1134 */ vmCodePushint, 3, vmCodeSet,
+				/* 1137 */ vmCodeExit).
+			expectWord(1138, "+",
+				/* 1140 */ vmCodeCompile, vmCodeRun,
+				/* 1142 */ 1134, // _x!
+				/* 1145 */ vmCodePushint, 0,
+				/* 1146 */ 1126, // _x
+				/* 1147 */ vmCodeSub, vmCodeSub,
+				/* 1149 */ vmCodeExit).
+			expectStack(3 + 5 + 7)
+	})
 
-	testCases = append(testCases, vmTest("hello").withInput(`
-		exit : immediate _read @ ! - * / < echo key pick
-		: ] 1 @ 1 - 1 ! _read ]
-		: main immediate ] main
-		: _x  3 @ exit
-		: _x! 3 ! exit
-		: + _x! 0 _x - - exit
-
+	k.addSource("hello", "", `
 		: digit '0' + echo exit
 
 		: test immediate
@@ -359,16 +359,11 @@ func Test_VM(t *testing.T) {
 			'\n'      echo
 			exit
 		test
-	`).expectOutput("07734\n"))
+	`, func(vmt vmTestCase) vmTestCase {
+		return vmt.expectOutput("07734\n")
+	})
 
-	testCases = append(testCases, vmTest("ansi literals").withInput(`
-		exit : immediate _read @ ! - * / < echo key pick
-		: ] 1 @ 1 - 1 ! _read ]
-		: main immediate ] main
-		: _x  3 @ exit
-		: _x! 3 ! exit
-		: + _x! 0 _x - - exit
-
+	k.addSource("ansi literals", "", `
 		: digit '0' + echo exit
 
 		: sgr_reset
@@ -396,31 +391,19 @@ func Test_VM(t *testing.T) {
 			<nl> echo
 			exit
 		test
-	`).expectOutput("\x1b[0m\x1b[32mSuper\x1b[0m\r\n"))
+	`, func(vmt vmTestCase) vmTestCase {
+		return vmt.expectOutput("\x1b[0m\x1b[32mSuper\x1b[0m\r\n")
+	})
 
-	testCases = append(testCases, vmTest("reboot").withInput(`
-		exit : immediate _read @ ! - * / < echo key pick
+	// TODO breakout "quote"
 
-		: ] 1 @ 1 - 1 ! _read ]
-		: main immediate ] main
-
-		: r  1  exit
-		: rb 10 exit
-
-		: _x  3 @ exit
-		: _x! 3 ! exit
-		: _y  4 @ exit
-		: _y! 4 ! exit
-		: _z  5 @ exit
-		: _z! 5 ! exit
-
-		: + _x! 0 _x - - exit
+	k.addSource("reboot", `
 		: dup _x! _x _x exit
 
 		: '
 			r @ @
 			dup
-			-1 -
+			1 +
 			r @ !
 			@
 			exit
@@ -435,19 +418,26 @@ func Test_VM(t *testing.T) {
 			' _read]
 			exec
 		reboot
-
-		: _flags! rb @ 1 - ! exit
-		: _tron  1 _flags! exit
-		: _troff 0 _flags! exit
-
+	`, `
 		: test immediate
-			_tron
 			42
 			1024 1024 * @
 		test
-	`).expectRStack(1106).expectStack(42).expectError(memLimitError{1024 * 1024, "get"}))
+	`, func(vmt vmTestCase) vmTestCase {
+		return vmt.
+			expectRStack(1110).
+			expectStack(42).
+			expectError(memLimitError{1024 * 1024, "get"})
+	})
 
-	testCases.run(t)
+	// : + _x! 0 _x - - exit
+
+	// : _y  4 @ exit
+	// : _y! 4 ! exit
+	// : _z  5 @ exit
+	// : _z! 5 ! exit
+
+	k.tests.run(t)
 }
 
 type vmTestCases []vmTestCase
@@ -491,6 +481,13 @@ type vmTestCase struct {
 
 	exclusive   bool
 	nextInputID int
+}
+
+func (vmt vmTestCase) apply(wraps ...func(vmTestCase) vmTestCase) vmTestCase {
+	for _, wrap := range wraps {
+		vmt = wrap(vmt)
+	}
+	return vmt
 }
 
 func (vmt vmTestCase) exclusiveTest() vmTestCase {
@@ -602,15 +599,21 @@ func (vmt vmTestCase) withMemLimit(limit uint) vmTestCase {
 	return vmt
 }
 
-func (vmt vmTestCase) withInput(source string) vmTestCase {
+func (vmt vmTestCase) withInput(input string) vmTestCase {
 	vmt.opts = append(vmt.opts, func(vmt *vmTestCase, t *testing.T) VMOption {
 		name := t.Name() + "/input"
 		if id := vmt.nextInputID; id > 0 {
 			name += "_" + strconv.Itoa(id+1)
 		}
 		vmt.nextInputID++
-		return WithInput(NamedReader(name, strings.NewReader(source)))
+		return WithInput(NamedReader(name, strings.NewReader(input)))
 	})
+	return vmt
+}
+
+func (vmt vmTestCase) withNamedInput(name string, input string) vmTestCase {
+	r := NamedReader(name, strings.NewReader(input))
+	vmt.opts = append(vmt.opts, WithInput(r))
 	return vmt
 }
 
