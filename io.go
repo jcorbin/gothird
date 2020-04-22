@@ -614,17 +614,18 @@ type vmDumper struct {
 }
 
 func (dump vmDumper) dump() {
-	fmt.Fprintf(dump.out, "prog: %v\n", dump.vm.prog)
+	fmt.Fprintf(dump.out, "# VM Dump\n")
+	fmt.Fprintf(dump.out, "  prog: %v\n", dump.vm.prog)
 
 	dump.scanWords()
-	fmt.Fprintf(dump.out, "dict: %v\n", dump.words)
+	fmt.Fprintf(dump.out, "  dict: %v\n", dump.words)
 
 	dump.dumpStack()
 	dump.dumpMem()
 }
 
 func (dump *vmDumper) dumpStack() {
-	fmt.Fprintf(dump.out, "stack: %v\n", dump.vm.stack)
+	fmt.Fprintf(dump.out, "  stack: %v\n", dump.vm.stack)
 }
 
 func (dump *vmDumper) dumpMem() {
@@ -651,7 +652,7 @@ func (dump *vmDumper) dumpMem() {
 			buf.WriteTo(dump.out)
 		}
 
-		fmt.Fprintf(&buf, "@% *v ", dump.addrWidth, addr)
+		fmt.Fprintf(&buf, "  @% *v ", dump.addrWidth, addr)
 		n := buf.Len()
 
 		addr = dump.formatMem(&buf, addr)

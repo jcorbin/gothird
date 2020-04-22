@@ -8,8 +8,8 @@ import (
 
 func New(opts ...VMOption) *VM {
 	var vm VM
-	vm.apply(defaultOptions...)
-	vm.apply(opts...)
+	defaultOptions.apply(&vm)
+	VMOptions(opts...).apply(&vm)
 	return &vm
 }
 

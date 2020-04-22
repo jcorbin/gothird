@@ -200,40 +200,40 @@ func Test_VM(t *testing.T) {
 		expectWord(1038, "immediate", vmCodeImmediate, vmCodeExit).
 		expectWord(1042, "_read", vmCodeCompIt, vmCodeRead, vmCodeExit).
 		expectDump(lines(
-			`prog: 1028`,
-			`dict: [1087 1082 1077 1072 1067 1062 1057 1052 1047 1042 1038 1034 1030 1024]`,
-			`stack: []`,
-
-			`@    0 1092 dict`,
-			`@    1 255 ret`,
-			`@    2 0`,
-			`@    3 0`,
-			`@    4 0`,
-			`@    5 0`,
-			`@    6 0`,
-			`@    7 0`,
-			`@    8 0`,
-			`@    9 0`,
-			`@   10 256 retBase`,
-			`@   11 1024 memBase`,
+			`# VM Dump`,
+			`  prog: 1028`,
+			`  dict: [1087 1082 1077 1072 1067 1062 1057 1052 1047 1042 1038 1034 1030 1024]`,
+			`  stack: []`,
+			`  @    0 1092 dict`,
+			`  @    1 255 ret`,
+			`  @    2 0`,
+			`  @    3 0`,
+			`  @    4 0`,
+			`  @    5 0`,
+			`  @    6 0`,
+			`  @    7 0`,
+			`  @    8 0`,
+			`  @    9 0`,
+			`  @   10 256 retBase`,
+			`  @   11 1024 memBase`,
 
 			`# Return Stack @256`,
 
 			`# Main Memory @1024`,
-			`@ 1024 : ø immediate runme read ø+3 exit`,
-			`@ 1030 : exit exit`,
-			`@ 1034 : : immediate define exit`,
-			`@ 1038 : immediate immediate immediate exit`,
-			`@ 1042 : _read read exit`,
-			`@ 1047 : @ get exit`,
-			`@ 1052 : ! set exit`,
-			`@ 1057 : - sub exit`,
-			`@ 1062 : * mul exit`,
-			`@ 1067 : / div exit`,
-			`@ 1072 : <0 under0 exit`,
-			`@ 1077 : echo echo exit`,
-			`@ 1082 : key key exit`,
-			`@ 1087 : pick pick exit`,
+			`  @ 1024 : ø immediate runme read ø+3 exit`,
+			`  @ 1030 : exit exit`,
+			`  @ 1034 : : immediate define exit`,
+			`  @ 1038 : immediate immediate immediate exit`,
+			`  @ 1042 : _read read exit`,
+			`  @ 1047 : @ get exit`,
+			`  @ 1052 : ! set exit`,
+			`  @ 1057 : - sub exit`,
+			`  @ 1062 : * mul exit`,
+			`  @ 1067 : / div exit`,
+			`  @ 1072 : <0 under0 exit`,
+			`  @ 1077 : echo echo exit`,
+			`  @ 1082 : key key exit`,
+			`  @ 1087 : pick pick exit`,
 		)))
 
 	// better main loop
@@ -265,55 +265,55 @@ func Test_VM(t *testing.T) {
 		/* @1109 */ vmCodeRun,
 		/* @1110 */ 1096,
 	).expectDump(lines(
-		`prog: 1106`,
-		`dict: [1107 1092 1087 1082 1077 1072 1067 1062 1057 1052 1047 1042 1038 1034 1030 1024]`,
-		`stack: []`,
-
-		`@    0 1111 dict`,
-		`@    1 268 ret`,
-		`@    2 0`,
-		`@    3 0`,
-		`@    4 0`,
-		`@    5 0`,
-		`@    6 0`,
-		`@    7 0`,
-		`@    8 0`,
-		`@    9 0`,
-		`@   10 256 retBase`,
-		`@   11 1024 memBase`,
+		`# VM Dump`,
+		`  prog: 1106`,
+		`  dict: [1107 1092 1087 1082 1077 1072 1067 1062 1057 1052 1047 1042 1038 1034 1030 1024]`,
+		`  stack: []`,
+		`  @    0 1111 dict`,
+		`  @    1 268 ret`,
+		`  @    2 0`,
+		`  @    3 0`,
+		`  @    4 0`,
+		`  @    5 0`,
+		`  @    6 0`,
+		`  @    7 0`,
+		`  @    8 0`,
+		`  @    9 0`,
+		`  @   10 256 retBase`,
+		`  @   11 1024 memBase`,
 
 		`# Return Stack @256`,
-		`@  256 1029 ret_0`,
-		`@  257 1029 ret_1`,
-		`@  258 1029 ret_2`,
-		`@  259 1029 ret_3`,
-		`@  260 1029 ret_4`,
-		`@  261 1029 ret_5`,
-		`@  262 1029 ret_6`,
-		`@  263 1029 ret_7`,
-		`@  264 1029 ret_8`,
-		`@  265 1029 ret_9`,
-		`@  266 1029 ret_10`,
-		`@  267 1029 ret_11`,
-		`@  268 1028 ret_12`,
+		`  @  256 1029 ret_0`,
+		`  @  257 1029 ret_1`,
+		`  @  258 1029 ret_2`,
+		`  @  259 1029 ret_3`,
+		`  @  260 1029 ret_4`,
+		`  @  261 1029 ret_5`,
+		`  @  262 1029 ret_6`,
+		`  @  263 1029 ret_7`,
+		`  @  264 1029 ret_8`,
+		`  @  265 1029 ret_9`,
+		`  @  266 1029 ret_10`,
+		`  @  267 1029 ret_11`,
+		`  @  268 1028 ret_12`,
 
 		`# Main Memory @1024`,
-		`@ 1024 : ø immediate runme read ø+3 exit`,
-		`@ 1030 : exit exit`,
-		`@ 1034 : : immediate define exit`,
-		`@ 1038 : immediate immediate immediate exit`,
-		`@ 1042 : _read read exit`,
-		`@ 1047 : @ get exit`,
-		`@ 1052 : ! set exit`,
-		`@ 1057 : - sub exit`,
-		`@ 1062 : * mul exit`,
-		`@ 1067 : / div exit`,
-		`@ 1072 : <0 under0 exit`,
-		`@ 1077 : echo echo exit`,
-		`@ 1082 : key key exit`,
-		`@ 1087 : pick pick exit`,
-		`@ 1092 : ] runme pushint(1) get pushint(1) sub pushint(1) set read ]+4`,
-		`@ 1107 : main immediate runme ]+4`,
+		`  @ 1024 : ø immediate runme read ø+3 exit`,
+		`  @ 1030 : exit exit`,
+		`  @ 1034 : : immediate define exit`,
+		`  @ 1038 : immediate immediate immediate exit`,
+		`  @ 1042 : _read read exit`,
+		`  @ 1047 : @ get exit`,
+		`  @ 1052 : ! set exit`,
+		`  @ 1057 : - sub exit`,
+		`  @ 1062 : * mul exit`,
+		`  @ 1067 : / div exit`,
+		`  @ 1072 : <0 under0 exit`,
+		`  @ 1077 : echo echo exit`,
+		`  @ 1082 : key key exit`,
+		`  @ 1087 : pick pick exit`,
+		`  @ 1092 : ] runme pushint(1) get pushint(1) sub pushint(1) set read ]+4`,
+		`  @ 1107 : main immediate runme ]+4`,
 	)))
 
 	testCases = append(testCases, vmTest("add").withInput(`
@@ -486,6 +486,7 @@ type vmTestCase struct {
 	setup   []func(t *testing.T, vm *VM)
 	ops     []func(vm *VM)
 	expect  []func(t *testing.T, vm *VM)
+	timeout time.Duration
 	wantErr error
 
 	exclusive   bool
@@ -623,6 +624,11 @@ func (vmt vmTestCase) do(ops ...func(vm *VM)) vmTestCase {
 	return vmt
 }
 
+func (vmt vmTestCase) withTimeout(timeout time.Duration) vmTestCase {
+	vmt.timeout = timeout
+	return vmt
+}
+
 func (vmt vmTestCase) expectError(err error) vmTestCase {
 	vmt.wantErr = err
 	return vmt
@@ -731,12 +737,7 @@ func (vmt vmTestCase) expectDump(dump string) vmTestCase {
 }
 
 func (vmt vmTestCase) withTestDump() vmTestCase {
-	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		lw := &logWriter{logf: func(mess string, args ...interface{}) {
-			t.Logf("dump: "+mess, args...)
-		}}
-		vmDumper{vm: vm, out: lw}.dump()
-	})
+	vmt.expect = append(vmt.expect, vmt.dumpToTest)
 	return vmt
 }
 
@@ -764,8 +765,8 @@ func (vmt vmTestCase) withTestHexOutput() vmTestCase {
 	return vmt
 }
 
-func (vmt vmTestCase) buildOptions(t *testing.T) []VMOption {
-	opts := make([]VMOption, 0, len(vmt.opts))
+func (vmt vmTestCase) buildOptions(t *testing.T) VMOption {
+	var opts []VMOption
 	for _, opt := range vmt.opts {
 		switch impl := opt.(type) {
 		case func(vmt *vmTestCase, t *testing.T) VMOption:
@@ -777,14 +778,19 @@ func (vmt vmTestCase) buildOptions(t *testing.T) []VMOption {
 			t.FailNow()
 		}
 	}
-	return opts
+	return VMOptions(opts...)
 }
 
 func (vmt vmTestCase) run(t *testing.T) {
-	const defaultMemLimit = 4 * 1024
+	ctx := context.TODO()
+
+	const (
+		defaultTimeout  = time.Second
+		defaultMemLimit = 4 * 1024
+	)
 
 	var vm VM
-	vm.apply(vmt.buildOptions(t)...)
+	vmt.buildOptions(t).apply(&vm)
 
 	for _, setup := range vmt.setup {
 		setup(t, &vm)
@@ -800,34 +806,38 @@ func (vmt vmTestCase) run(t *testing.T) {
 	}
 	WithLogf(t.Logf).apply(&vm)
 
+	timeout := vmt.timeout
+	if timeout == 0 {
+		timeout = defaultTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	defer vm.Close()
 
 	defer func() {
 		if t.Failed() {
-			lw := &logWriter{logf: func(mess string, args ...interface{}) {
-				t.Logf("fail_dump: "+mess, args...)
-			}}
-			vmDumper{
-				vm:  &vm,
-				out: lw,
-			}.dump()
-			lw.Close()
+			vmt.dumpToTest(t, &vm)
 		}
 	}()
 
-	withTimeout(context.Background(), time.Second, func(ctx context.Context) {
-		if len(vmt.ops) > 0 {
-			vmt.runOps(ctx, t, &vm)
-		} else if err := vm.Run(ctx); vmt.wantErr != nil {
-			require.True(t, errors.Is(err, vmt.wantErr), "expected error: %v\ngot: %+v", vmt.wantErr, err)
-		} else {
-			require.NoError(t, err, "expected no VM error")
-		}
-	})
+	if len(vmt.ops) > 0 {
+		vmt.runOps(ctx, t, &vm)
+	} else if err := vm.Run(ctx); vmt.wantErr != nil {
+		require.True(t, errors.Is(err, vmt.wantErr), "expected error: %v\ngot: %+v", vmt.wantErr, err)
+	} else {
+		require.NoError(t, err, "expected no VM error")
+	}
 
 	for _, expect := range vmt.expect {
 		expect(t, &vm)
 	}
+}
+
+func (vmt vmTestCase) dumpToTest(t *testing.T, vm *VM) {
+	lw := logWriter{logf: t.Logf}
+	defer lw.Close()
+	vmDumper{vm: vm, out: &lw}.dump()
 }
 
 func (vmt vmTestCase) runOps(ctx context.Context, t *testing.T, vm *VM) {
@@ -864,12 +874,6 @@ func (vmt vmTestCase) runOps(ctx context.Context, t *testing.T, vm *VM) {
 
 func lines(parts ...string) string {
 	return strings.Join(parts, "\n") + "\n"
-}
-
-func withTimeout(ctx context.Context, timeout time.Duration, f func(ctx context.Context)) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	f(ctx)
 }
 
 type lineLogger struct {

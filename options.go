@@ -8,12 +8,39 @@ import (
 
 type VMOption interface{ apply(vm *VM) }
 
-var defaultOptions = []VMOption{
+var defaultOptions = VMOptions(
 	withInput(bytes.NewReader(nil)),
 	withOutput(ioutil.Discard),
+)
+
+func VMOptions(opts ...VMOption) VMOption {
+	var res options
+	for _, opt := range opts {
+		switch impl := opt.(type) {
+		case nil, noption:
+		case options:
+			res = append(res, impl...)
+		default:
+			res = append(res, opt)
+		}
+	}
+	switch len(res) {
+	case 0:
+		return noption{}
+	case 1:
+		return res[0]
+	default:
+		return res
+	}
 }
 
-func (vm *VM) apply(opts ...VMOption) {
+type noption struct{}
+
+func (noption) apply(vm *VM) {}
+
+type options []VMOption
+
+func (opts options) apply(vm *VM) {
 	for _, opt := range opts {
 		if opt != nil {
 			opt.apply(vm)
