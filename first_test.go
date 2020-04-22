@@ -436,11 +436,16 @@ func Test_VM(t *testing.T) {
 			exec
 		reboot
 
+		: _flags! rb @ 1 - ! exit
+		: _tron  1 _flags! exit
+		: _troff 0 _flags! exit
+
 		: test immediate
+			_tron
 			42
 			1024 1024 * @
 		test
-	`).withTestLog().expectRStack(1106).expectStack(42).expectError(memLimitError{1024 * 1024, "get"}))
+	`).expectRStack(1106).expectStack(42).expectError(memLimitError{1024 * 1024, "get"}))
 
 	testCases.run(t)
 }
@@ -725,13 +730,6 @@ func (vmt vmTestCase) expectDump(dump string) vmTestCase {
 	return vmt
 }
 
-func (vmt vmTestCase) withTestLog() vmTestCase {
-	vmt.setup = append(vmt.setup, func(t *testing.T, vm *VM) {
-		WithLogf(t.Logf).apply(vm)
-	})
-	return vmt
-}
-
 func (vmt vmTestCase) withTestDump() vmTestCase {
 	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
 		lw := &logWriter{logf: func(mess string, args ...interface{}) {
@@ -800,6 +798,7 @@ func (vmt vmTestCase) run(t *testing.T) {
 	if vm.memLimit == 0 {
 		vm.memLimit = defaultMemLimit
 	}
+	WithLogf(t.Logf).apply(&vm)
 
 	defer vm.Close()
 

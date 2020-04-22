@@ -303,8 +303,26 @@ func (vm *VM) codeName() string {
 	return vmCodeNames[code]
 }
 
+const (
+	debugTRON = 1 << iota
+)
+
+// TODO use a portal instead
+
+func (vm *VM) checkFlag(flag int) bool {
+	retBase := uint(vm.load(10))
+	val := vm.load(retBase - 1)
+	return val&flag != 0
+}
+
+func (vm *VM) logf(mark, message string, args ...interface{}) {
+	if vm.checkFlag(debugTRON) {
+		vm.logging.logf(mark, message, args...)
+	}
+}
+
 func (vm *VM) step() {
-	if vm.logfn != nil {
+	if vm.logfn != nil && vm.checkFlag(debugTRON) {
 		at := fmt.Sprintf(" @%v", vm.prog)
 
 		funcName, _ := vm.wordOf(vm.prog)
@@ -317,7 +335,7 @@ func (vm *VM) step() {
 			vm.codeWidth = len(codeName)
 		}
 
-		vm.logf(at, "% *v.% -*v s:%v r:%v",
+		vm.logging.logf(at, "% *v.% -*v s:%v r:%v",
 			vm.funcWidth, funcName,
 			vm.codeWidth, codeName,
 			vm.stack,
