@@ -1,21 +1,7 @@
 package main
 
 import (
-	"context"
-	"encoding/hex"
-	"errors"
-	"fmt"
-	"io"
-	"io/ioutil"
-	"reflect"
-	"runtime"
-	"strconv"
-	"strings"
 	"testing"
-	"time"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_VM(t *testing.T) {
@@ -230,50 +216,48 @@ func Test_kernel(t *testing.T) {
 
 	k.addSource("builtins", `
 		exit : immediate _read @ ! - * / <0 echo key pick
-	`, "", func(vmt vmTestCase) vmTestCase {
-		return vmt.
-			expectWord(1024, "", vmCodeRun, vmCodeRead, 1027, vmCodeExit).
-			expectWord(1030, "exit", vmCodeCompIt, vmCodeExit).
-			expectWord(1034, ":", vmCodeDefine, vmCodeExit).
-			expectWord(1038, "immediate", vmCodeImmediate, vmCodeExit).
-			expectWord(1042, "_read", vmCodeCompIt, vmCodeRead, vmCodeExit).
-			expectDump(lines(
-				`# VM Dump`,
-				`  prog: 1028`,
-				`  dict: [1087 1082 1077 1072 1067 1062 1057 1052 1047 1042 1038 1034 1030 1024]`,
-				`  stack: []`,
-				`  @    0 1092 dict`,
-				`  @    1 255 ret`,
-				`  @    2 0`,
-				`  @    3 0`,
-				`  @    4 0`,
-				`  @    5 0`,
-				`  @    6 0`,
-				`  @    7 0`,
-				`  @    8 0`,
-				`  @    9 0`,
-				`  @   10 256 retBase`,
-				`  @   11 1024 memBase`,
+	`, "",
+		expectVMWord(1024, "", vmCodeRun, vmCodeRead, 1027, vmCodeExit),
+		expectVMWord(1030, "exit", vmCodeCompIt, vmCodeExit),
+		expectVMWord(1034, ":", vmCodeDefine, vmCodeExit),
+		expectVMWord(1038, "immediate", vmCodeImmediate, vmCodeExit),
+		expectVMWord(1042, "_read", vmCodeCompIt, vmCodeRead, vmCodeExit),
+		expectVMDump(lines(
+			`# VM Dump`,
+			`  prog: 1028`,
+			`  dict: [1087 1082 1077 1072 1067 1062 1057 1052 1047 1042 1038 1034 1030 1024]`,
+			`  stack: []`,
+			`  @    0 1092 dict`,
+			`  @    1 255 ret`,
+			`  @    2 0`,
+			`  @    3 0`,
+			`  @    4 0`,
+			`  @    5 0`,
+			`  @    6 0`,
+			`  @    7 0`,
+			`  @    8 0`,
+			`  @    9 0`,
+			`  @   10 256 retBase`,
+			`  @   11 1024 memBase`,
 
-				`# Return Stack @256`,
+			`# Return Stack @256`,
 
-				`# Main Memory @1024`,
-				`  @ 1024 : ø immediate runme read ø+3 exit`,
-				`  @ 1030 : exit exit`,
-				`  @ 1034 : : immediate define exit`,
-				`  @ 1038 : immediate immediate immediate exit`,
-				`  @ 1042 : _read read exit`,
-				`  @ 1047 : @ get exit`,
-				`  @ 1052 : ! set exit`,
-				`  @ 1057 : - sub exit`,
-				`  @ 1062 : * mul exit`,
-				`  @ 1067 : / div exit`,
-				`  @ 1072 : <0 under0 exit`,
-				`  @ 1077 : echo echo exit`,
-				`  @ 1082 : key key exit`,
-				`  @ 1087 : pick pick exit`,
-			))
-	})
+			`# Main Memory @1024`,
+			`  @ 1024 : ø immediate runme read ø+3 exit`,
+			`  @ 1030 : exit exit`,
+			`  @ 1034 : : immediate define exit`,
+			`  @ 1038 : immediate immediate immediate exit`,
+			`  @ 1042 : _read read exit`,
+			`  @ 1047 : @ get exit`,
+			`  @ 1052 : ! set exit`,
+			`  @ 1057 : - sub exit`,
+			`  @ 1062 : * mul exit`,
+			`  @ 1067 : / div exit`,
+			`  @ 1072 : <0 under0 exit`,
+			`  @ 1077 : echo echo exit`,
+			`  @ 1082 : key key exit`,
+			`  @ 1087 : pick pick exit`,
+		)))
 
 	k.addSource("main", `
 		: r 1 exit
@@ -291,33 +275,31 @@ func Test_kernel(t *testing.T) {
 		: test immediate
 			rb @
 		test
-	`, func(vmt vmTestCase) vmTestCase {
-		return vmt.
-			expectWord(1092, "r",
-				/* 1094 */ vmCodeCompile, vmCodeRun,
-				/* 1096 */ vmCodePushint, 1,
-				/* 1098 */ vmCodeExit,
-			).
-			expectWord(1099, "]",
-				/* @1101 */ vmCodeCompile,
-				/* @1102 */ vmCodeRun,
-				/* @1103 */ 1096, vmCodeGet,
-				/* @1105 */ 1096, vmCodeSub,
-				/* @1107 */ 1096, vmCodeSet,
-				/* @1109 */ vmCodeRead,
-				/* @1110 */ 1103,
-			).
-			expectWord(1111, "main",
-				/* @1113 */ vmCodeRun,
-				/* @1114 */ 1103,
-			).
-			expectWord(1115, "rb",
-				/* 1117 */ vmCodeCompile, vmCodeRun,
-				/* 1119 */ vmCodePushint, 10,
-				/* 1121 */ vmCodeExit,
-			).
-			expectStack(256)
-	})
+	`,
+		expectVMWord(1092, "r",
+			/* 1094 */ vmCodeCompile, vmCodeRun,
+			/* 1096 */ vmCodePushint, 1,
+			/* 1098 */ vmCodeExit,
+		),
+		expectVMWord(1099, "]",
+			/* @1101 */ vmCodeCompile,
+			/* @1102 */ vmCodeRun,
+			/* @1103 */ 1096, vmCodeGet,
+			/* @1105 */ 1096, vmCodeSub,
+			/* @1107 */ 1096, vmCodeSet,
+			/* @1109 */ vmCodeRead,
+			/* @1110 */ 1103,
+		),
+		expectVMWord(1111, "main",
+			/* @1113 */ vmCodeRun,
+			/* @1114 */ 1103,
+		),
+		expectVMWord(1115, "rb",
+			/* 1117 */ vmCodeCompile, vmCodeRun,
+			/* 1119 */ vmCodePushint, 10,
+			/* 1121 */ vmCodeExit,
+		),
+		expectVMStack(256))
 
 	k.addSource("add", `
 		: _x  3 @ exit
@@ -327,25 +309,23 @@ func Test_kernel(t *testing.T) {
 		: test immediate
 			3 5 7 + +
 		test
-	`, func(vmt vmTestCase) vmTestCase {
-		return vmt.
-			expectWord(1122, "_x",
-				/* 1124 */ vmCodeCompile, vmCodeRun,
-				/* 1126 */ vmCodePushint, 3, vmCodeGet,
-				/* 1129 */ vmCodeExit).
-			expectWord(1130, "_x!",
-				/* 1132 */ vmCodeCompile, vmCodeRun,
-				/* 1134 */ vmCodePushint, 3, vmCodeSet,
-				/* 1137 */ vmCodeExit).
-			expectWord(1138, "+",
-				/* 1140 */ vmCodeCompile, vmCodeRun,
-				/* 1142 */ 1134, // _x!
-				/* 1145 */ vmCodePushint, 0,
-				/* 1146 */ 1126, // _x
-				/* 1147 */ vmCodeSub, vmCodeSub,
-				/* 1149 */ vmCodeExit).
-			expectStack(3 + 5 + 7)
-	})
+	`,
+		expectVMWord(1122, "_x",
+			/* 1124 */ vmCodeCompile, vmCodeRun,
+			/* 1126 */ vmCodePushint, 3, vmCodeGet,
+			/* 1129 */ vmCodeExit),
+		expectVMWord(1130, "_x!",
+			/* 1132 */ vmCodeCompile, vmCodeRun,
+			/* 1134 */ vmCodePushint, 3, vmCodeSet,
+			/* 1137 */ vmCodeExit),
+		expectVMWord(1138, "+",
+			/* 1140 */ vmCodeCompile, vmCodeRun,
+			/* 1142 */ 1134, // _x!
+			/* 1145 */ vmCodePushint, 0,
+			/* 1146 */ 1126, // _x
+			/* 1147 */ vmCodeSub, vmCodeSub,
+			/* 1149 */ vmCodeExit),
+		expectVMStack(3+5+7))
 
 	k.addSource("hello", "", `
 		: digit '0' + echo exit
@@ -359,9 +339,7 @@ func Test_kernel(t *testing.T) {
 			'\n'      echo
 			exit
 		test
-	`, func(vmt vmTestCase) vmTestCase {
-		return vmt.expectOutput("07734\n")
-	})
+	`, expectVMOutput("07734\n"))
 
 	k.addSource("ansi literals", "", `
 		: digit '0' + echo exit
@@ -391,9 +369,7 @@ func Test_kernel(t *testing.T) {
 			<nl> echo
 			exit
 		test
-	`, func(vmt vmTestCase) vmTestCase {
-		return vmt.expectOutput("\x1b[0m\x1b[32mSuper\x1b[0m\r\n")
-	})
+	`, expectVMOutput("\x1b[0m\x1b[32mSuper\x1b[0m\r\n"))
 
 	// TODO breakout "quote"
 
@@ -423,12 +399,10 @@ func Test_kernel(t *testing.T) {
 			42
 			1024 1024 * @
 		test
-	`, func(vmt vmTestCase) vmTestCase {
-		return vmt.
-			expectRStack(1110).
-			expectStack(42).
-			expectError(memLimitError{1024 * 1024, "get"})
-	})
+	`,
+		expectVMRStack(1110),
+		expectVMStack(42),
+		expectVMError(memLimitError{1024 * 1024, "get"}))
 
 	// : + _x! 0 _x - - exit
 
@@ -438,457 +412,4 @@ func Test_kernel(t *testing.T) {
 	// : _z! 5 ! exit
 
 	k.tests.run(t)
-}
-
-type vmTestCases []vmTestCase
-
-func (vmts vmTestCases) run(t *testing.T) {
-	{
-		var exclusive []vmTestCase
-		for _, vmt := range vmts {
-			if vmt.exclusive {
-				exclusive = append(exclusive, vmt)
-			}
-		}
-		if len(exclusive) > 0 {
-			vmts = exclusive
-		}
-	}
-	for _, vmt := range vmts {
-		if !t.Run(vmt.name, vmt.run) {
-			return
-		}
-	}
-}
-
-func vmTest(name string) (vmt vmTestCase) {
-	vmt.name = name
-	return vmt
-}
-
-type optFunc func(vm *VM)
-
-func (f optFunc) apply(vm *VM) { f(vm) }
-
-type vmTestCase struct {
-	name    string
-	opts    []interface{}
-	setup   []func(t *testing.T, vm *VM)
-	ops     []func(vm *VM)
-	expect  []func(t *testing.T, vm *VM)
-	timeout time.Duration
-	wantErr error
-
-	exclusive   bool
-	nextInputID int
-}
-
-func (vmt vmTestCase) apply(wraps ...func(vmTestCase) vmTestCase) vmTestCase {
-	for _, wrap := range wraps {
-		vmt = wrap(vmt)
-	}
-	return vmt
-}
-
-func (vmt vmTestCase) exclusiveTest() vmTestCase {
-	vmt.exclusive = true
-	return vmt
-}
-
-func (vmt vmTestCase) withOptions(opts ...VMOption) vmTestCase {
-	for _, opt := range opts {
-		vmt.opts = append(vmt.opts, opt)
-	}
-	return vmt
-}
-
-func (vmt vmTestCase) withProg(prog uint) vmTestCase {
-	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-		vm.prog = prog
-	}))
-	return vmt
-}
-
-func (vmt vmTestCase) withLast(last uint) vmTestCase {
-	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-		vm.last = last
-	}))
-	return vmt
-}
-
-func (vmt vmTestCase) withStack(values ...int) vmTestCase {
-	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-		vm.stack = append(vm.stack, values...)
-	}))
-	return vmt
-}
-
-func (vmt vmTestCase) withStrings(idStringPairs ...interface{}) vmTestCase {
-	if len(idStringPairs)%2 == 1 {
-		panic("must be given variadic pairs")
-	}
-	for i := 0; i < len(idStringPairs); i++ {
-		id := idStringPairs[i].(int)
-		i++
-		s := idStringPairs[i].(string)
-		vmt = vmt.withString(uint(id), s)
-	}
-	return vmt
-}
-
-func (vmt vmTestCase) withString(id uint, s string) vmTestCase {
-	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-		if need := int(id) - len(vm.symbols.strings); need > 0 {
-			vm.symbols.strings = append(vm.symbols.strings, make([]string, need)...)
-		}
-		if vm.symbols.symbols == nil {
-			vm.symbols.symbols = make(map[string]uint)
-		}
-		vm.symbols.strings[id-1] = s
-		vm.symbols.symbols[s] = id
-	}))
-	return vmt
-}
-
-func (vmt vmTestCase) withMemAt(addr uint, values ...int) vmTestCase {
-	if len(values) != 0 {
-		vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-			vm.stor(uint(addr), values...)
-		}))
-	}
-	return vmt
-}
-
-func (vmt vmTestCase) withH(val int) vmTestCase {
-	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-		vm.stor(0, val)
-	}))
-	return vmt
-}
-
-func (vmt vmTestCase) withR(val int) vmTestCase {
-	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-		vm.stor(1, val)
-	}))
-	return vmt
-}
-
-func (vmt vmTestCase) withPageSize(pageSize uint) vmTestCase {
-	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-		vm.pageSize = pageSize
-	}))
-	return vmt
-}
-
-func (vmt vmTestCase) withRetBase(addr uint, values ...int) vmTestCase {
-	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-		vm.stor(10, int(addr))
-	}))
-	return vmt.withMemAt(addr, values...).withR(int(addr) + len(values) - 1)
-}
-
-func (vmt vmTestCase) withMemBase(addr uint, values ...int) vmTestCase {
-	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-		vm.stor(11, int(addr))
-	}))
-	return vmt.withMemAt(addr, values...)
-}
-
-func (vmt vmTestCase) withMemLimit(limit uint) vmTestCase {
-	vmt.opts = append(vmt.opts, withMemLimit(limit))
-	return vmt
-}
-
-func (vmt vmTestCase) withInput(input string) vmTestCase {
-	vmt.opts = append(vmt.opts, func(vmt *vmTestCase, t *testing.T) VMOption {
-		name := t.Name() + "/input"
-		if id := vmt.nextInputID; id > 0 {
-			name += "_" + strconv.Itoa(id+1)
-		}
-		vmt.nextInputID++
-		return WithInput(NamedReader(name, strings.NewReader(input)))
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) withNamedInput(name string, input string) vmTestCase {
-	r := NamedReader(name, strings.NewReader(input))
-	vmt.opts = append(vmt.opts, WithInput(r))
-	return vmt
-}
-
-func (vmt vmTestCase) withInputWriter(w io.WriterTo) vmTestCase {
-	vmt.opts = append(vmt.opts, WithInputWriter(w))
-	return vmt
-}
-
-func (vmt vmTestCase) do(ops ...func(vm *VM)) vmTestCase {
-	vmt.ops = append(vmt.ops, ops...)
-	return vmt
-}
-
-func (vmt vmTestCase) withTimeout(timeout time.Duration) vmTestCase {
-	vmt.timeout = timeout
-	return vmt
-}
-
-func (vmt vmTestCase) expectError(err error) vmTestCase {
-	vmt.wantErr = err
-	return vmt
-}
-
-func (vmt vmTestCase) expectProg(prog uint) vmTestCase {
-	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		assert.Equal(t, prog, vm.prog, "expected program counter")
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) expectLast(last uint) vmTestCase {
-	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		assert.Equal(t, last, vm.last, "expected last address")
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) expectStack(values ...int) vmTestCase {
-	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		if values == nil {
-			values = []int{}
-		}
-		assert.Equal(t, values, vm.stack, "expected stack values")
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) expectRStack(values ...int) vmTestCase {
-	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		if values == nil {
-			values = []int{}
-		}
-		assert.Equal(t, values, vm.rstack(), "expected return stack values")
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) expectString(id uint, s string) vmTestCase {
-	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		assert.Equal(t, s, vm.string(id), "expected string #%v", id)
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) expectMemAt(addr uint, values ...int) vmTestCase {
-	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		buf := make([]int, len(values))
-		vm.loadInto(addr, buf)
-		if !assert.Equal(t, values, buf, "expected memory values @%v", addr) {
-			for i, value := range values {
-				a := addr + uint(i)
-				assert.Equal(t, value, vm.load(a), "expected memory value @%v", a)
-			}
-			t.Logf("bases: %v", vm.bases)
-			t.Logf("pages: %v", vm.pages)
-		}
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) expectWord(addr uint, name string, code ...int) vmTestCase {
-	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		buf := make([]int, len(code))
-		assert.Equal(t, name, vm.string(uint(vm.load(addr+1))), "expected word @%v name", addr)
-		vm.loadInto(addr+2, buf)
-		assert.Equal(t, code, buf, "expected %q @%v+2 code", name, addr)
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) expectH(value int) vmTestCase {
-	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		assert.Equal(t, value, vm.load(0), "expected H value")
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) expectR(value int) vmTestCase {
-	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		assert.Equal(t, value, vm.load(1), "expected R value")
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) expectOutput(output string) vmTestCase {
-	var out strings.Builder
-	vmt.opts = append(vmt.opts, WithOutput(&out))
-	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		assert.Equal(t, output, out.String(), "expected output")
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) expectDump(dump string) vmTestCase {
-	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		var out strings.Builder
-		vmDumper{
-			vm:  vm,
-			out: &out,
-		}.dump()
-		assert.Equal(t, dump, out.String(), "expected dump")
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) withTestDump() vmTestCase {
-	vmt.expect = append(vmt.expect, vmt.dumpToTest)
-	return vmt
-}
-
-func (vmt vmTestCase) withTestOutput() vmTestCase {
-	vmt.setup = append(vmt.setup, func(t *testing.T, vm *VM) {
-		lw := &logWriter{logf: func(mess string, args ...interface{}) {
-			t.Logf("out: "+mess, args...)
-		}}
-		vm.closers = append(vm.closers, lw)
-		WithTee(lw).apply(vm)
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) withTestHexOutput() vmTestCase {
-	vmt.setup = append(vmt.setup, func(t *testing.T, vm *VM) {
-		lw := &logWriter{logf: func(mess string, args ...interface{}) {
-			t.Logf("out: "+mess, args...)
-		}}
-		enc := hex.Dumper(lw)
-		WithTee(enc).apply(vm)
-		vm.closers = append(vm.closers, enc)
-		vm.closers = append(vm.closers, lw)
-	})
-	return vmt
-}
-
-func (vmt vmTestCase) buildOptions(t *testing.T) VMOption {
-	var opts []VMOption
-	for _, opt := range vmt.opts {
-		switch impl := opt.(type) {
-		case func(vmt *vmTestCase, t *testing.T) VMOption:
-			opts = append(opts, impl(&vmt, t))
-		case VMOption:
-			opts = append(opts, impl)
-		default:
-			t.Logf("unsupported vmTestCase opt type %T", opt)
-			t.FailNow()
-		}
-	}
-	return VMOptions(opts...)
-}
-
-func (vmt vmTestCase) run(t *testing.T) {
-	ctx := context.TODO()
-
-	const (
-		defaultTimeout  = time.Second
-		defaultMemLimit = 4 * 1024
-	)
-
-	var vm VM
-	vmt.buildOptions(t).apply(&vm)
-
-	for _, setup := range vmt.setup {
-		setup(t, &vm)
-	}
-	if vm.in == nil {
-		vm.in = strings.NewReader("")
-	}
-	if vm.out == nil {
-		vm.out = newWriteFlusher(ioutil.Discard)
-	}
-	if vm.memLimit == 0 {
-		vm.memLimit = defaultMemLimit
-	}
-	WithLogf(t.Logf).apply(&vm)
-
-	timeout := vmt.timeout
-	if timeout == 0 {
-		timeout = defaultTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	defer vm.Close()
-
-	defer func() {
-		if t.Failed() {
-			vmt.dumpToTest(t, &vm)
-		}
-	}()
-
-	if len(vmt.ops) > 0 {
-		vmt.runOps(ctx, t, &vm)
-	} else if err := vm.Run(ctx); vmt.wantErr != nil {
-		require.True(t, errors.Is(err, vmt.wantErr), "expected error: %v\ngot: %+v", vmt.wantErr, err)
-	} else {
-		require.NoError(t, err, "expected no VM error")
-	}
-
-	for _, expect := range vmt.expect {
-		expect(t, &vm)
-	}
-}
-
-func (vmt vmTestCase) dumpToTest(t *testing.T, vm *VM) {
-	lw := logWriter{logf: t.Logf}
-	defer lw.Close()
-	vmDumper{vm: vm, out: &lw}.dump()
-}
-
-func (vmt vmTestCase) runOps(ctx context.Context, t *testing.T, vm *VM) {
-	names := make([]string, len(vmt.ops))
-	for i, op := range vmt.ops {
-		names[i] = runtime.FuncForPC(reflect.ValueOf(op).Pointer()).Name()
-	}
-
-	if err := isolate("VMOps", func() error {
-		vm.init()
-		for i := 0; i < len(vmt.ops); i++ {
-			if vmt.ops[i] == nil {
-				i--
-			}
-			t.Logf("do[%v] %v", i, names[i])
-			vmt.ops[i](vm)
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		wantErr := vmt.wantErr
-		if wantErr == nil {
-			wantErr = vmHaltError{nil}
-		}
-		if !errors.Is(err, wantErr) {
-			assert.NoError(t, err, "expected vm to halt with %v", wantErr)
-		}
-	}
-}
-
-//// utilities
-
-func lines(parts ...string) string {
-	return strings.Join(parts, "\n") + "\n"
-}
-
-type lineLogger struct {
-	io.Writer
-	prior bool
-}
-
-func (ll *lineLogger) printf(mess string, args ...interface{}) {
-	if ll.prior {
-		io.WriteString(ll.Writer, "\n")
-	} else {
-		ll.prior = true
-	}
-	fmt.Fprintf(ll.Writer, mess, args...)
 }
