@@ -6,6 +6,7 @@ import (
 )
 
 func Test_Third(t *testing.T) {
+	t.Skip()
 	vmTest("setup").
 		withInputWriter(thirdKernel).
 		withTestHexOutput().

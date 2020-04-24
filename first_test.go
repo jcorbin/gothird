@@ -176,6 +176,8 @@ func Test_VM(t *testing.T) {
 		// input one character
 		vmTest("key^2 => echo^2").withInput("ab").do(key, key, echo, echo).expectOutput("ba"),
 	)
+
+	testCases.run(t)
 }
 
 type kernel struct {
@@ -327,53 +329,7 @@ func Test_kernel(t *testing.T) {
 			/* 1149 */ vmCodeExit),
 		expectVMStack(3+5+7))
 
-	k.addSource("hello", "", `
-		: digit '0' + echo exit
-
-		: test immediate
-			0         digit
-			10 3 -    digit
-			21 3 /    digit
-			9 2 3 * - digit
-			2 2 *     digit
-			'\n'      echo
-			exit
-		test
-	`, expectVMOutput("07734\n"))
-
-	k.addSource("ansi literals", "", `
-		: digit '0' + echo exit
-
-		: sgr_reset
-			<CSI> echo
-			'0'   echo
-			'm'   echo
-			exit
-
-		: sgr_fg
-			<CSI> echo
-			'3'   echo
-			'0' + echo
-			'm'   echo
-			exit
-
-		: test immediate
-			sgr_reset 2 sgr_fg
-				'S' echo
-				'u' echo
-				'p' echo
-				'e' echo
-				'r' echo
-			sgr_reset
-			<cr> echo
-			<nl> echo
-			exit
-		test
-	`, expectVMOutput("\x1b[0m\x1b[32mSuper\x1b[0m\r\n"))
-
-	// TODO breakout "quote"
-
-	k.addSource("reboot", `
+	k.addSource("quote", `
 		: dup _x! _x _x exit
 
 		: '
@@ -383,7 +339,19 @@ func Test_kernel(t *testing.T) {
 			r @ !
 			@
 			exit
+	`, `
+		: test immediate
+			' ]
+			' @
+			' exit
+		test
+	`, expectVMStack(
+		1103,       // ' ]
+		vmCodeGet,  // ' @
+		vmCodeExit, // ' exit
+	))
 
+	k.addSource("reboot", `
 		: exec
 			rb @ !
 			rb @ r !
@@ -410,6 +378,50 @@ func Test_kernel(t *testing.T) {
 	// : _y! 4 ! exit
 	// : _z  5 @ exit
 	// : _z! 5 ! exit
+
+	// k.addSource("hello", "", `
+	// 	: digit '0' + echo exit
+
+	// 	: test immediate
+	// 		0         digit
+	// 		10 3 -    digit
+	// 		21 3 /    digit
+	// 		9 2 3 * - digit
+	// 		2 2 *     digit
+	// 		'\n'      echo
+	// 		exit
+	// 	test
+	// `, expectVMOutput("07734\n"))
+
+	// k.addSource("ansi literals", "", `
+	// 	: digit '0' + echo exit
+
+	// 	: sgr_reset
+	// 		<CSI> echo
+	// 		'0'   echo
+	// 		'm'   echo
+	// 		exit
+
+	// 	: sgr_fg
+	// 		<CSI> echo
+	// 		'3'   echo
+	// 		'0' + echo
+	// 		'm'   echo
+	// 		exit
+
+	// 	: test immediate
+	// 		sgr_reset 2 sgr_fg
+	// 			'S' echo
+	// 			'u' echo
+	// 			'p' echo
+	// 			'e' echo
+	// 			'r' echo
+	// 		sgr_reset
+	// 		<cr> echo
+	// 		<nl> echo
+	// 		exit
+	// 	test
+	// `, expectVMOutput("\x1b[0m\x1b[32mSuper\x1b[0m\r\n"))
 
 	k.tests.run(t)
 }

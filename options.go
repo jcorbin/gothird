@@ -82,10 +82,16 @@ func (o outputOption) apply(vm *VM) {
 		vm.out.Flush()
 	}
 	vm.out = newWriteFlusher(o.Writer)
+	if cl, ok := o.Writer.(io.Closer); ok {
+		vm.closers = append(vm.closers, cl)
+	}
 }
 
 func (o teeOption) apply(vm *VM) {
 	vm.out = multiWriteFlusher(vm.out, newWriteFlusher(o.Writer))
+	if cl, ok := o.Writer.(io.Closer); ok {
+		vm.closers = append(vm.closers, cl)
+	}
 }
 
 func (lim memLimitOption) apply(vm *VM) {

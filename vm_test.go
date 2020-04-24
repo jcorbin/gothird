@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 type vmTestCases []vmTestCase
@@ -51,7 +50,6 @@ func (f optFunc) apply(vm *VM) { f(vm) }
 type vmTestCase struct {
 	name    string
 	opts    []interface{}
-	setup   []func(t *testing.T, vm *VM)
 	ops     []func(vm *VM)
 	expect  []func(t *testing.T, vm *VM)
 	timeout time.Duration
@@ -190,8 +188,9 @@ func (vmt vmTestCase) withInput(input string) vmTestCase {
 }
 
 func (vmt vmTestCase) withNamedInput(name string, input string) vmTestCase {
-	r := NamedReader(name, strings.NewReader(input))
-	vmt.opts = append(vmt.opts, WithInput(r))
+	vmt.opts = append(vmt.opts, func(vmt *vmTestCase, t *testing.T) VMOption {
+		return WithInput(NamedReader(name, strings.NewReader(input)))
+	})
 	return vmt
 }
 
@@ -323,70 +322,47 @@ func (vmt vmTestCase) withTestDump() vmTestCase {
 }
 
 func (vmt vmTestCase) withTestOutput() vmTestCase {
-	vmt.setup = append(vmt.setup, func(t *testing.T, vm *VM) {
+	vmt.opts = append(vmt.opts, func(vmt *vmTestCase, t *testing.T) VMOption {
 		lw := &logWriter{logf: func(mess string, args ...interface{}) {
 			t.Logf("out: "+mess, args...)
 		}}
-		vm.closers = append(vm.closers, lw)
-		WithTee(lw).apply(vm)
+		return WithTee(lw)
 	})
 	return vmt
 }
 
 func (vmt vmTestCase) withTestHexOutput() vmTestCase {
-	vmt.setup = append(vmt.setup, func(t *testing.T, vm *VM) {
+	vmt.opts = append(vmt.opts, func(vmt *vmTestCase, t *testing.T) VMOption {
 		lw := &logWriter{logf: func(mess string, args ...interface{}) {
 			t.Logf("out: "+mess, args...)
 		}}
 		enc := hex.Dumper(lw)
-		WithTee(enc).apply(vm)
-		vm.closers = append(vm.closers, enc)
-		vm.closers = append(vm.closers, lw)
+		w := writeCloser{enc, closerChain{enc, lw}}
+		return WithTee(w)
 	})
 	return vmt
 }
 
-func (vmt vmTestCase) buildOptions(t *testing.T) VMOption {
-	var opts []VMOption
-	for _, opt := range vmt.opts {
-		switch impl := opt.(type) {
-		case func(vmt *vmTestCase, t *testing.T) VMOption:
-			opts = append(opts, impl(&vmt, t))
-		case VMOption:
-			opts = append(opts, impl)
-		default:
-			t.Logf("unsupported vmTestCase opt type %T", opt)
-			t.FailNow()
+func (vmt vmTestCase) run(t *testing.T) {
+	defer func(then time.Time) {
+		label := "PASS"
+		if t.Failed() {
+			label = "FAIL"
 		}
+		t.Logf("%v\t%v\t%v", label, t.Name(), time.Now().Sub(then))
+	}(time.Now())
+
+	if testFails(func(t *testing.T) {
+		vmt.runVMTest(context.Background(), t, vmt.buildVM(t))
+	}) {
+		vm := vmt.buildVM(t)
+		WithLogf(t.Logf).apply(vm)
+		vmt.runVMTest(context.Background(), t, vm)
 	}
-	return VMOptions(opts...)
 }
 
-func (vmt vmTestCase) run(t *testing.T) {
-	ctx := context.TODO()
-
-	const (
-		defaultTimeout  = time.Second
-		defaultMemLimit = 4 * 1024
-	)
-
-	var vm VM
-	vmt.buildOptions(t).apply(&vm)
-
-	for _, setup := range vmt.setup {
-		setup(t, &vm)
-	}
-	if vm.in == nil {
-		vm.in = strings.NewReader("")
-	}
-	if vm.out == nil {
-		vm.out = newWriteFlusher(ioutil.Discard)
-	}
-	if vm.memLimit == 0 {
-		vm.memLimit = defaultMemLimit
-	}
-	WithLogf(t.Logf).apply(&vm)
-
+func (vmt vmTestCase) runVMTest(ctx context.Context, t *testing.T, vm *VM) {
+	const defaultTimeout = time.Second
 	timeout := vmt.timeout
 	if timeout == 0 {
 		timeout = defaultTimeout
@@ -394,25 +370,87 @@ func (vmt vmTestCase) run(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	defer vm.Close()
-
 	defer func() {
 		if t.Failed() {
-			vmt.dumpToTest(t, &vm)
+			vmt.dumpToTest(t, vm)
 		}
 	}()
 
-	if len(vmt.ops) > 0 {
-		vmt.runOps(ctx, t, &vm)
-	} else if err := vm.Run(ctx); vmt.wantErr != nil {
-		require.True(t, errors.Is(err, vmt.wantErr), "expected error: %v\ngot: %+v", vmt.wantErr, err)
+	var halted vmHaltError
+	if err := vmt.runVM(ctx, vm); vmt.wantErr != nil {
+		assert.True(t, errors.Is(err, vmt.wantErr), "expected error: %v\ngot: %+v", vmt.wantErr, err)
+	} else if errors.As(err, &halted) {
+		assert.NoError(t, halted.error, "unexpected abnormal VM halt")
 	} else {
-		require.NoError(t, err, "expected no VM error")
+		assert.NoError(t, err, "unexpected VM run error")
 	}
 
-	for _, expect := range vmt.expect {
-		expect(t, &vm)
+	if !t.Failed() {
+		for _, expect := range vmt.expect {
+			expect(t, vm)
+		}
 	}
+}
+
+func (vmt vmTestCase) runVM(ctx context.Context, vm *VM) (rerr error) {
+	defer func() {
+		if err := vm.Close(); err != nil && rerr == nil {
+			rerr = fmt.Errorf("vm.Close failed: %w", err)
+		}
+	}()
+
+	if len(vmt.ops) == 0 {
+		return vm.Run(ctx)
+	}
+
+	names := make([]string, len(vmt.ops))
+	for i, op := range vmt.ops {
+		names[i] = runtime.FuncForPC(reflect.ValueOf(op).Pointer()).Name()
+	}
+	return isolate("vmTestCase.ops", func() error {
+		vm.init()
+		for i := 0; i < len(vmt.ops); i++ {
+			if vmt.ops[i] == nil {
+				i--
+			}
+			vm.logf(">", "do[%v] %v", i, names[i])
+			vmt.ops[i](vm)
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func (vmt vmTestCase) buildVM(t *testing.T) *VM {
+	const defaultMemLimit = 4 * 1024
+
+	var vm VM
+	vm.memLimit = defaultMemLimit
+
+	var opt VMOption
+	for _, o := range vmt.opts {
+		switch impl := o.(type) {
+		case func(vmt *vmTestCase, t *testing.T) VMOption:
+			opt = VMOptions(opt, impl(&vmt, t))
+		case VMOption:
+			opt = VMOptions(opt, impl)
+		default:
+			t.Logf("unsupported vmTestCase opt type %T", o)
+			t.FailNow()
+		}
+	}
+	opt.apply(&vm)
+
+	if vm.in == nil {
+		vm.in = strings.NewReader("")
+	}
+	if vm.out == nil {
+		vm.out = newWriteFlusher(ioutil.Discard)
+	}
+
+	return &vm
 }
 
 func (vmt vmTestCase) dumpToTest(t *testing.T, vm *VM) {
@@ -421,37 +459,34 @@ func (vmt vmTestCase) dumpToTest(t *testing.T, vm *VM) {
 	vmDumper{vm: vm, out: &lw}.dump()
 }
 
-func (vmt vmTestCase) runOps(ctx context.Context, t *testing.T, vm *VM) {
-	names := make([]string, len(vmt.ops))
-	for i, op := range vmt.ops {
-		names[i] = runtime.FuncForPC(reflect.ValueOf(op).Pointer()).Name()
-	}
+//// utilities
 
-	if err := isolate("VMOps", func() error {
-		vm.init()
-		for i := 0; i < len(vmt.ops); i++ {
-			if vmt.ops[i] == nil {
-				i--
-			}
-			t.Logf("do[%v] %v", i, names[i])
-			vmt.ops[i](vm)
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		wantErr := vmt.wantErr
-		if wantErr == nil {
-			wantErr = vmHaltError{nil}
-		}
-		if !errors.Is(err, wantErr) {
-			assert.NoError(t, err, "expected vm to halt with %v", wantErr)
-		}
-	}
+func testFails(fn func(t *testing.T)) bool {
+	var fakeT testing.T
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		fn(&fakeT)
+	}()
+	<-done
+	return fakeT.Failed()
 }
 
-//// utilities
+type writeCloser struct {
+	io.Writer
+	io.Closer
+}
+
+type closerChain []io.Closer
+
+func (cc closerChain) Close() (rerr error) {
+	for _, cl := range cc {
+		if cerr := cl.Close(); rerr == nil {
+			rerr = cerr
+		}
+	}
+	return rerr
+}
 
 func lines(parts ...string) string {
 	return strings.Join(parts, "\n") + "\n"
