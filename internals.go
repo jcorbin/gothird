@@ -2,13 +2,10 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"runtime/debug"
 	"strconv"
 	"strings"
-	"testing"
 	"unicode"
 )
 
@@ -525,81 +522,4 @@ func (log logging) logf(mark, mess string, args ...interface{}) {
 		mess = fmt.Sprintf(mess, args...)
 	}
 	log.logfn("%v %v", mark, mess)
-}
-
-func isolate(name string, f func() error) error {
-	errch := make(chan error, 1)
-	go func() {
-		defer close(errch)
-		defer recoverExitError(name, errch)
-		defer recoverPanicError(name, errch)
-		errch <- f()
-	}()
-	return <-errch
-}
-
-func isolateTestRun(t *testing.T, name string, f func(t *testing.T)) bool {
-	return t.Run(name, func(t *testing.T) {
-		if err := isolate(t.Name(), func() error {
-			f(t)
-			return nil
-		}); err != nil {
-			t.Logf("%+v", err)
-			t.Fail()
-		}
-	})
-}
-
-func recoverExitError(name string, errch chan<- error) {
-	select {
-	case errch <- exitError(name):
-	default:
-		// assumes that that the happy path does a (maybe nil) send
-	}
-}
-
-type exitError string
-
-func (name exitError) Error() string {
-	return fmt.Sprintf("%v called runtime.Goexit", string(name))
-}
-
-func recoverPanicError(name string, errch chan<- error) {
-	if e := recover(); e != nil {
-		select {
-		case errch <- panicError{name, e, string(debug.Stack())}:
-		default:
-		}
-	}
-}
-
-func panicErrorStack(err error) string {
-	var pe panicError
-	if errors.As(err, &pe) {
-		return pe.stack
-	}
-	return ""
-}
-
-type panicError struct {
-	name  string
-	e     interface{}
-	stack string
-}
-
-func (pe panicError) Error() string {
-	return fmt.Sprintf("%v paniced: %v", pe.name, pe.e)
-}
-
-func (pe panicError) Format(f fmt.State, c rune) {
-	if c == 'v' && f.Flag('+') {
-		fmt.Fprintf(f, "%v paniced: %v\nPanic stack: %s", pe.name, pe.e, pe.stack)
-	} else {
-		fmt.Fprintf(f, "%v paniced: %v", pe.name, pe.e)
-	}
-}
-
-func (pe panicError) Unwrap() error {
-	err, _ := pe.e.(error)
-	return err
 }

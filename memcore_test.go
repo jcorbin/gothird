@@ -168,18 +168,29 @@ func Test_memCore(t *testing.T) {
 					t.Logf("pages: %v", mem.pages)
 				}
 			}()
+
 			for _, step := range tc.steps {
-				if !isolateTestRun(t, step.name, func(t *testing.T) {
+				if !t.Run(step.name, func(t *testing.T) {
 					stepLogOut := &logWriter{logf: t.Logf}
 					log.SetOutput(stepLogOut)
 					defer log.SetOutput(tcLogOut)
 
-					step.f(t, &mem)
+					isolateTest(t, step.bind(&mem))
 				}) {
 					break
 				}
 			}
 		})
+	}
+}
+
+func isolateTest(t *testing.T, f func(t *testing.T)) {
+	if err := isolate(t.Name(), func() error {
+		f(t)
+		return nil
+	}); err != nil {
+		t.Logf("%+v", err)
+		t.Fail()
 	}
 }
 
@@ -221,4 +232,15 @@ type memCoreTestCase struct {
 type memCoreTestStep struct {
 	name string
 	f    func(t *testing.T, mem *memCore)
+
+	mem *memCore
+}
+
+func (step memCoreTestStep) bind(mem *memCore) func(t *testing.T) {
+	step.mem = mem
+	return step.boundTest
+}
+
+func (step memCoreTestStep) boundTest(t *testing.T) {
+	step.f(t, step.mem)
 }
