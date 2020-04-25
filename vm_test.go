@@ -344,24 +344,26 @@ func (vmt vmTestCase) withTestHexOutput() vmTestCase {
 }
 
 func (vmt vmTestCase) run(t *testing.T) {
+	var vmRunTook time.Duration
 	defer func(then time.Time) {
+		took := time.Now().Sub(then)
 		label := "PASS"
 		if t.Failed() {
 			label = "FAIL"
 		}
-		t.Logf("%v\t%v\t%v", label, t.Name(), time.Now().Sub(then))
+		t.Logf("%v\t%v\t%v (VM run took %v)", label, t.Name(), took, vmRunTook)
 	}(time.Now())
 
 	if testFails(func(t *testing.T) {
-		vmt.runVMTest(context.Background(), t, vmt.buildVM(t))
+		vmRunTook = vmt.runVMTest(context.Background(), t, vmt.buildVM(t))
 	}) {
 		vm := vmt.buildVM(t)
 		WithLogf(t.Logf).apply(vm)
-		vmt.runVMTest(context.Background(), t, vm)
+		vmRunTook = vmt.runVMTest(context.Background(), t, vm)
 	}
 }
 
-func (vmt vmTestCase) runVMTest(ctx context.Context, t *testing.T, vm *VM) {
+func (vmt vmTestCase) runVMTest(ctx context.Context, t *testing.T, vm *VM) (took time.Duration) {
 	const defaultTimeout = time.Second
 	timeout := vmt.timeout
 	if timeout == 0 {
@@ -377,7 +379,10 @@ func (vmt vmTestCase) runVMTest(ctx context.Context, t *testing.T, vm *VM) {
 	}()
 
 	var halted vmHaltError
-	if err := vmt.runVM(ctx, vm); vmt.wantErr != nil {
+	if err := func() error {
+		defer func(then time.Time) { took = time.Now().Sub(then) }(time.Now())
+		return vmt.runVM(ctx, vm)
+	}(); vmt.wantErr != nil {
 		assert.True(t, errors.Is(err, vmt.wantErr), "expected error: %v\ngot: %+v", vmt.wantErr, err)
 	} else if errors.As(err, &halted) {
 		assert.NoError(t, halted.error, "unexpected abnormal VM halt")
@@ -390,6 +395,7 @@ func (vmt vmTestCase) runVMTest(ctx context.Context, t *testing.T, vm *VM) {
 			expect(t, vm)
 		}
 	}
+	return
 }
 
 func (vmt vmTestCase) runVM(ctx context.Context, vm *VM) (rerr error) {
