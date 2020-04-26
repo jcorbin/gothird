@@ -92,6 +92,7 @@ func Test_kernel(t *testing.T) {
 	k.addSource("add", `
 		: _x  3 @ exit
 		: _x! 3 ! exit
+
 		: + _x! 0 _x - - exit
 	`, `
 		: test immediate
@@ -115,7 +116,8 @@ func Test_kernel(t *testing.T) {
 			/* 1149 */ vmCodeExit),
 		expectVMStack(3+5+7))
 
-	// Build the standard FORTH quote word, and test it.
+	// ' is a standard FORTH word.
+	// It should push the address of the word that follows it onto the stack.
 	k.addSource("quote", `
 		: dup _x! _x _x exit
 
@@ -160,56 +162,62 @@ func Test_kernel(t *testing.T) {
 		expectVMStack(42),
 		expectVMError(memLimitError{1024 * 1024, "get"}))
 
-	// : + _x! 0 _x - - exit
+	// swap two values on the top of the stack.
+	k.addSource("swap", `
+		: _y  4 @ exit
+		: _y! 4 ! exit
 
-	// : _y  4 @ exit
-	// : _y! 4 ! exit
+		: swap
+			_x! _y! _x _y
+			exit
+	`, `
+		: test immediate
+			swap
+			100
+		test
+	`,
+		withVMStack(44, 99),
+		expectVMStack(99, 44, 100))
+
+	// inc is a pointer incrementing word.
+	k.addSource("inc", `
+		: inc
+		  dup @
+		  1 +
+		  swap !
+		  exit
+	`, `
+		: test immediate
+			5 inc
+		test
+	`,
+		withVMMemAt(5, 99),
+		expectVMMemAt(5, 100))
+
+	// , is a standard FORTH word.
+	// It should write the top of stack into the dictionary, and advance the pointer.
+	k.addSource("compile", `
+		: h 0 exit
+
+		: ,
+			h @
+			!
+			h inc
+			exit
+	`, `
+		: test immediate
+			42 ,
+		exit test
+	`,
+		expectVMH(1284),
+		expectVMMemAt(1283, 42))
+
+	// expectVMStack(),
 	// : _z  5 @ exit
 	// : _z! 5 ! exit
 
-	// k.addSource("hello", "", `
-	// 	: digit '0' + echo exit
-
-	// 	: test immediate
-	// 		0         digit
-	// 		10 3 -    digit
-	// 		21 3 /    digit
-	// 		9 2 3 * - digit
-	// 		2 2 *     digit
-	// 		'\n'      echo
-	// 		exit
-	// 	test
-	// `, expectVMOutput("07734\n"))
-
-	// k.addSource("ansi literals", "", `
-	// 	: digit '0' + echo exit
-
-	// 	: sgr_reset
-	// 		<CSI> echo
-	// 		'0'   echo
-	// 		'm'   echo
-	// 		exit
-
-	// 	: sgr_fg
-	// 		<CSI> echo
-	// 		'3'   echo
-	// 		'0' + echo
-	// 		'm'   echo
-	// 		exit
-
-	// 	: test immediate
-	// 		sgr_reset 2 sgr_fg
-	// 			'S' echo
-	// 			'u' echo
-	// 			'p' echo
-	// 			'e' echo
-	// 			'r' echo
-	// 		sgr_reset
-	// 		<cr> echo
-	// 		<nl> echo
-	// 		exit
-	// 	test
-	// `, expectVMOutput("\x1b[0m\x1b[32mSuper\x1b[0m\r\n"))
+	// TODO
+	// drop
 
 	k.tests.run(t)
 }

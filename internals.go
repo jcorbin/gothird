@@ -10,12 +10,23 @@ import (
 )
 
 func (vm *VM) halt(err error) {
-	if ferr := vm.out.Flush(); err == nil {
-		err = ferr
-	}
-	err = vmHaltError{err}
-	vm.logf("#", "halt error: %v", err)
-	panic(err)
+	// ignore any panics while trying to flush output
+	func() {
+		defer func() { recover() }()
+		if vm.out != nil {
+			if ferr := vm.out.Flush(); err == nil {
+				err = ferr
+			}
+		}
+	}()
+
+	// ignore any panics while loggging
+	func() {
+		defer func() { recover() }()
+		vm.logf("#", "halt error: %v", err)
+	}()
+
+	panic(vmHaltError{err})
 }
 
 func (vm *VM) load(addr uint) int {
@@ -307,8 +318,14 @@ const (
 // TODO use a portal instead
 
 func (vm *VM) checkFlag(flag int) bool {
-	retBase := uint(vm.load(10))
-	val := vm.load(retBase - 1)
+	retBase, err := vm.memCore.load(10)
+	if err != nil {
+		return false
+	}
+	val, err := vm.memCore.load(uint(retBase) - 1)
+	if err != nil {
+		return false
+	}
 	return val&flag != 0
 }
 
