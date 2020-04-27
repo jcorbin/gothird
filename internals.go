@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -64,6 +65,9 @@ func (vm *VM) push(val int) {
 
 func (vm *VM) pop() (val int) {
 	i := len(vm.stack) - 1
+	if i < 0 {
+		vm.halt(errStackUnderflow)
+	}
 	val, vm.stack = vm.stack[i], vm.stack[:i]
 	return val
 }
@@ -479,6 +483,10 @@ func (vm *VM) readRune() rune {
 }
 
 type vmHaltError struct{ error }
+
+var (
+	errStackUnderflow = errors.New("stack underflow")
+)
 
 func (err vmHaltError) Error() string {
 	if err.error != nil {

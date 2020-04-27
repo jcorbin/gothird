@@ -212,6 +212,64 @@ func Test_kernel(t *testing.T) {
 		expectVMH(1284),
 		expectVMMemAt(1283, 42))
 
+	// ; should be an immediate word that pushes the address of exit onto the
+	// stack, then writes it out.
+	k.addSource(";", `
+		: ; immediate ' exit , exit
+
+		: drop 0 * + ;
+	`, `
+		: test immediate
+			drop
+			108
+		test
+	`,
+		// NOTE can't drop the last element on the stack, due to the
+		// coalescing-add causing an underflow
+		withVMStack(9, 12),
+		expectVMStack(9, 108))
+
+	// dec is a pointer decrementing word.
+	k.addSource("dec", `
+		: dec
+		  dup @
+		  1 -
+		  swap !
+		  ;
+	`, `
+		: test immediate
+			5 dec
+		test
+	`,
+		withVMMemAt(5, 99),
+		expectVMMemAt(5, 98))
+
+	// tor transfers a value from the data stack to the return stack.
+	// It's life is complicated, due to needing to work around its own return.
+	k.addSource("tor", `
+		: tor
+		  r @ @
+		  swap
+		  r @ !
+		  r @ 1 + r !
+		  r @ !
+		  ;
+	`, `
+		: hello 
+			'h' echo
+			'i' echo
+			;
+
+		: test immediate
+			' hello tor ;
+			'n' echo
+			'o' echo
+			;
+
+		test
+	`,
+		expectVMOutput(`hi`))
+
 	// expectVMStack(),
 	// : _z  5 @ exit
 	// : _z! 5 ! exit

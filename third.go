@@ -149,8 +149,6 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 	// Now let's test out ; by defining a useful word:
 	line(`: drop 0 * + ;`)
 
-	// FIXME seeing stack garbage from here on out
-
 	// Since we have 'inc', we ought to make 'dec':
 	line(`: dec dup @ 1 - swap ! ;`)
 

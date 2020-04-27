@@ -20,22 +20,28 @@ import (
 type vmTestCases []vmTestCase
 
 func (vmts vmTestCases) run(t *testing.T) {
-	{
-		var exclusive []vmTestCase
-		for _, vmt := range vmts {
-			if vmt.exclusive {
-				exclusive = append(exclusive, vmt)
+	for _, vmt := range vmts.filter() {
+		if !t.Run(vmt.name, func(t *testing.T) {
+			if testFails(vmt.run) {
+				vmt.withOptions(WithLogf(t.Logf)).run(t)
 			}
-		}
-		if len(exclusive) > 0 {
-			vmts = exclusive
-		}
-	}
-	for _, vmt := range vmts {
-		if !t.Run(vmt.name, vmt.run) {
+		}) {
 			return
 		}
 	}
+}
+
+func (vmts vmTestCases) filter() vmTestCases {
+	var exclusive []vmTestCase
+	for _, vmt := range vmts {
+		if vmt.exclusive {
+			exclusive = append(exclusive, vmt)
+		}
+	}
+	if len(exclusive) > 0 {
+		vmts = exclusive
+	}
+	return vmts
 }
 
 func vmTest(name string) (vmt vmTestCase) {
@@ -296,10 +302,12 @@ func (vmt vmTestCase) expectR(value int) vmTestCase {
 }
 
 func (vmt vmTestCase) expectOutput(output string) vmTestCase {
-	var out strings.Builder
-	vmt.opts = append(vmt.opts, WithOutput(&out))
-	vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
-		assert.Equal(t, output, out.String(), "expected output")
+	vmt.opts = append(vmt.opts, func(vmt *vmTestCase, t *testing.T) VMOption {
+		var out strings.Builder
+		vmt.expect = append(vmt.expect, func(t *testing.T, vm *VM) {
+			assert.Equal(t, output, out.String(), "expected output")
+		})
+		return WithOutput(&out)
 	})
 	return vmt
 }
@@ -344,26 +352,21 @@ func (vmt vmTestCase) withTestHexOutput() vmTestCase {
 }
 
 func (vmt vmTestCase) run(t *testing.T) {
-	var vmRunTook time.Duration
-	defer func(then time.Time) {
-		took := time.Now().Sub(then)
+	ctx := context.Background()
+
+	var testTimer, runTimer timer
+	defer func() {
 		label := "PASS"
 		if t.Failed() {
 			label = "FAIL"
 		}
-		t.Logf("%v\t%v\t%v (VM run took %v)", label, t.Name(), took, vmRunTook)
-	}(time.Now())
+		t.Logf("%v\t%v\t%v (VM run took %v)", label, t.Name(), testTimer.Elapsed(), runTimer.Elapsed())
+	}()
 
-	if testFails(func(t *testing.T) {
-		vmRunTook = vmt.runVMTest(context.Background(), t, vmt.buildVM(t))
-	}) {
-		vm := vmt.buildVM(t)
-		WithLogf(t.Logf).apply(vm)
-		vmRunTook = vmt.runVMTest(context.Background(), t, vm)
-	}
-}
+	defer testTimer.Start().Stop()
 
-func (vmt vmTestCase) runVMTest(ctx context.Context, t *testing.T, vm *VM) (took time.Duration) {
+	vm := vmt.buildVM(t)
+
 	const defaultTimeout = time.Second
 	timeout := vmt.timeout
 	if timeout == 0 {
@@ -380,7 +383,7 @@ func (vmt vmTestCase) runVMTest(ctx context.Context, t *testing.T, vm *VM) (took
 
 	var halted vmHaltError
 	if err := func() error {
-		defer func(then time.Time) { took = time.Now().Sub(then) }(time.Now())
+		defer runTimer.Start().Stop()
 		return vmt.runVM(ctx, vm)
 	}(); vmt.wantErr != nil {
 		assert.True(t, errors.Is(err, vmt.wantErr), "expected error: %v\ngot: %+v", vmt.wantErr, err)
@@ -429,7 +432,7 @@ func (vmt vmTestCase) runVM(ctx context.Context, vm *VM) (rerr error) {
 	})
 }
 
-func (vmt vmTestCase) buildVM(t *testing.T) *VM {
+func (vmt *vmTestCase) buildVM(t *testing.T) *VM {
 	const defaultMemLimit = 4 * 1024
 
 	var vm VM
@@ -439,7 +442,7 @@ func (vmt vmTestCase) buildVM(t *testing.T) *VM {
 	for _, o := range vmt.opts {
 		switch impl := o.(type) {
 		case func(vmt *vmTestCase, t *testing.T) VMOption:
-			opt = VMOptions(opt, impl(&vmt, t))
+			opt = VMOptions(opt, impl(vmt, t))
 		case VMOption:
 			opt = VMOptions(opt, impl)
 		default:
@@ -510,4 +513,25 @@ func (ll *lineLogger) printf(mess string, args ...interface{}) {
 		ll.prior = true
 	}
 	fmt.Fprintf(ll.Writer, mess, args...)
+}
+
+type timer struct {
+	start time.Time
+	end   time.Time
+}
+
+func (tim *timer) Elapsed() time.Duration {
+	if tim.end.IsZero() || tim.start.IsZero() {
+		return 0
+	}
+	return tim.end.Sub(tim.start)
+}
+
+func (tim *timer) Start() *timer {
+	tim.start = time.Now()
+	return tim
+}
+
+func (tim *timer) Stop() {
+	tim.end = time.Now()
 }
