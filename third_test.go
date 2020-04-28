@@ -254,7 +254,7 @@ func Test_kernel(t *testing.T) {
 		  r @ 1 + r !
 		  r @ !
 		  ;
-	`, `
+	`, /* primarily useful as a way to manipulate control flow */ `
 		: hello 
 			'h' echo
 			'i' echo
@@ -269,6 +269,32 @@ func Test_kernel(t *testing.T) {
 		test
 	`,
 		expectVMOutput(`hi`))
+
+	// fromr transfers a values from the return tack to the data stack.
+	// It's life is complicated, due to needing to work around its own return.
+	k.addSource("fromr", `
+		: fromr
+		  r @ @
+		  r @ 1 - r !
+		  r @ @
+		  swap
+		  r @ !
+		  ;
+	`, /* primarily useful as a way to access the compilation stream */ `
+		: echoit
+			fromr 1 +
+			dup 1 + tor
+			@ echo
+			;
+
+		: test immediate
+			echoit 'a'
+			'h' echo
+			;
+
+		test
+	`,
+		expectVMOutput(`ah`))
 
 	// expectVMStack(),
 	// : _z  5 @ exit
