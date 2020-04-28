@@ -72,7 +72,6 @@ func Test_kernel(t *testing.T) {
 	`, `
 		: test immediate
 			rb @
-		test
 	`,
 		expectVMWord(1092, "r", vmCodeCompile, vmCodeRun, vmCodePushint, 1, vmCodeExit),
 		expectVMWord(1099, "]",
@@ -97,7 +96,6 @@ func Test_kernel(t *testing.T) {
 	`, `
 		: test immediate
 			3 5 7 + +
-		test
 	`,
 		expectVMWord(1122, "_x",
 			/* 1124 */ vmCodeCompile, vmCodeRun,
@@ -133,7 +131,6 @@ func Test_kernel(t *testing.T) {
 			' ]
 			' @
 			' exit
-		test
 	`, expectVMStack(
 		1103,       // ' ]
 		vmCodeGet,  // ' @
@@ -156,7 +153,6 @@ func Test_kernel(t *testing.T) {
 		: test immediate
 			42
 			1024 1024 * @
-		test
 	`,
 		expectVMRStack(1110),
 		expectVMStack(42),
@@ -174,7 +170,6 @@ func Test_kernel(t *testing.T) {
 		: test immediate
 			swap
 			100
-		test
 	`,
 		withVMStack(44, 99),
 		expectVMStack(99, 44, 100))
@@ -189,7 +184,6 @@ func Test_kernel(t *testing.T) {
 	`, `
 		: test immediate
 			5 inc
-		test
 	`,
 		withVMMemAt(5, 99),
 		expectVMMemAt(5, 100))
@@ -207,7 +201,7 @@ func Test_kernel(t *testing.T) {
 	`, `
 		: test immediate
 			42 ,
-		exit test
+			exit
 	`,
 		expectVMH(1284),
 		expectVMMemAt(1283, 42))
@@ -222,7 +216,6 @@ func Test_kernel(t *testing.T) {
 		: test immediate
 			drop
 			108
-		test
 	`,
 		// NOTE can't drop the last element on the stack, due to the
 		// coalescing-add causing an underflow
@@ -239,7 +232,6 @@ func Test_kernel(t *testing.T) {
 	`, `
 		: test immediate
 			5 dec
-		test
 	`,
 		withVMMemAt(5, 99),
 		expectVMMemAt(5, 98))
@@ -265,8 +257,6 @@ func Test_kernel(t *testing.T) {
 			'n' echo
 			'o' echo
 			;
-
-		test
 	`,
 		expectVMOutput(`hi`))
 
@@ -291,10 +281,105 @@ func Test_kernel(t *testing.T) {
 			echoit 'a'
 			'h' echo
 			;
-
-		test
 	`,
 		expectVMOutput(`ah`))
+
+	k.addSource("bool", `
+		: minus 0 swap - ;
+		: bnot 1 swap - ;
+		: < - <0 ;
+		: > minus < ;
+		: logical
+			dup
+			0 <
+			swap minus
+			0 <
+			+
+			;
+		: not logical bnot ;
+		: = - not ;
+	`, `
+		: test immediate
+			2 3 <
+			3 2 <
+			4 5 1 - =
+			;
+	`, expectVMStack(1, 0, 1))
+
+	k.addSource("branch", `
+		: branch
+			r @ @
+			@
+			r @ @
+			+
+			r @ !
+			;
+		: computebranch 1 - * 1 + ;
+		: notbranch
+			not
+			r @ @ @
+			computebranch
+			r @ @ +
+			r @ !
+			;
+
+		: here h @ ;
+
+		: if immediate
+			' notbranch ,
+			here
+			0 ,
+			;
+
+		: then immediate
+			dup
+			here swap -
+			swap !
+			;
+	`, `
+		: test immediate
+			'h' echo
+			0 if
+			'm' echo
+			then
+			'a' echo
+	`, expectVMOutput(`ha`))
+
+	k.addSource("tail", `
+		: tail fromr fromr drop tor ;
+	`, `
+		: printn
+			dup 0 < not if
+				swap
+				dup @ echo
+				1 +
+				swap 1 -
+				tail printn
+			then
+			;
+
+		: print
+			dup @
+			swap
+			1 +
+			swap
+			1 -
+			printn
+			;
+
+		: test immediate
+			'"' echo
+			here
+				5 ,
+				'h' ,
+				'e' ,
+				'l' ,
+				'l' ,
+				'o' ,
+			print
+			'"' echo
+			;
+	`, expectVMOutput(`"hello"`))
 
 	// expectVMStack(),
 	// : _z  5 @ exit
@@ -327,12 +412,6 @@ func (k *kernel) addSource(
 	name, input, test string,
 	wraps ...func(vmTestCase) vmTestCase,
 ) {
-	const tronCode = `
-		: _flags! rb @ 1 - ! exit
-		: _tron  immediate 1 _flags! exit
-		: _troff immediate 0 _flags! exit
-		_tron`
-
 	vmt := vmTest(name)
 	for i, name := range k.names {
 		vmt = vmt.withNamedInput("kernel_"+name, k.inputs[i])
@@ -340,8 +419,14 @@ func (k *kernel) addSource(
 	vmt = vmt.withNamedInput(name, input)
 	if len(test) > 0 {
 		vmt = vmt.
-			withNamedInput("tron", tronCode).
-			withNamedInput("kernel_"+name+"_test", test)
+			withNamedInput("tron", `
+				: flags! rb @ 1 - ! exit
+				: tron  immediate 1 flags! exit
+				: troff immediate 0 flags! exit`).
+			withNamedInput("kernel_test_"+name, test).
+			withNamedInput("kernel_test_run", `
+				tron test
+			`)
 	}
 	vmt = vmt.apply(wraps...)
 
