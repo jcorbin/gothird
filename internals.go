@@ -301,10 +301,10 @@ func (vm *VM) wordOf(addr uint) (string, uint) {
 }
 
 func (vm *VM) codeName() string {
-	code := vm.loadProg()
+	code := uint(vm.loadProg())
 	defer func() { vm.prog-- }()
-	if code >= len(vmCodeTable) {
-		if name, _ := vm.wordOf(uint(code)); name != "" {
+	if code >= uint(len(vmCodeTable)) {
+		if name, _ := vm.wordOf(code); name != "" {
 			return name
 		}
 		return fmt.Sprintf("call(%v)", code)
@@ -361,7 +361,7 @@ func (vm *VM) step() {
 		)
 	}
 
-	if code := vm.loadProg(); code < len(vmCodeTable) {
+	if code := uint(vm.loadProg()); code < uint(len(vmCodeTable)) {
 		vmCodeTable[code](vm)
 	} else {
 		vm.call(uint(code))

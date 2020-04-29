@@ -750,7 +750,7 @@ func (dump *vmDumper) formatMem(buf fmtBuf, addr uint) uint {
 }
 
 func (dump *vmDumper) formatCode(buf fmtBuf, addr uint) uint {
-	code := dump.vm.load(addr)
+	code := uint(dump.vm.load(addr))
 	addr++
 
 	// builtin code
@@ -767,11 +767,11 @@ func (dump *vmDumper) formatCode(buf fmtBuf, addr uint) uint {
 
 	// call to word+offset
 	if i := sort.Search(len(dump.words), func(i int) bool {
-		return dump.words[i] < uint(code)
+		return dump.words[i] < code
 	}); i < len(dump.words) {
 		word := dump.words[i]
 		dump.formatName(buf, dump.vm.load(word+1))
-		if offset := uint(code) - word; offset > 0 {
+		if offset := code - word; offset > 0 {
 			buf.WriteByte('+')
 			buf.WriteString(strconv.Itoa(int(offset)))
 		}
@@ -779,7 +779,7 @@ func (dump *vmDumper) formatCode(buf fmtBuf, addr uint) uint {
 	}
 
 	// call to unknown address
-	buf.WriteString(strconv.Itoa(code))
+	buf.WriteString(strconv.FormatUint(uint64(code), 10))
 	return addr
 }
 

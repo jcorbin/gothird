@@ -381,12 +381,72 @@ func Test_kernel(t *testing.T) {
 			;
 	`, expectVMOutput(`"hello"`))
 
-	// expectVMStack(),
-	// : _z  5 @ exit
-	// : _z! 5 ! exit
+	k.addSource("comments", `
+		: find-)
+			key
+			')' =
+			not if
+			tail find-)
+			then ;
+		: ( immediate find-) ;
+	`, `
+		: test immediate
+			'/' echo
+			( we should be able to do FORTH-style comments now )
+			'/' echo
+			;
+	`, expectVMOutput(`//`))
 
-	// TODO
-	// drop
+	k.addSource("else", `
+		: else immediate
+		  ' branch ,            ( compile a definite branch )
+		  here                  ( push the backpatching address )
+		  0 ,                   ( compile a dummy offset for branch )
+		  swap                  ( bring old backpatch address to top )
+		  dup here swap -       ( calculate the offset from old address )
+		  swap !                ( put the address on top and store it )
+		;
+	`, `
+		: bit logical
+			if   'y' echo
+			else 'n' echo
+			then ;
+
+		: test immediate
+			0 bit
+			1 bit
+			3 bit
+			8 bit
+			;
+	`, expectVMOutput(`nyyy`))
+
+	k.addSource("printnum", `
+		: mod _x! _y!           ( get x then y off of stack )
+		  _y _y _x / _x *       ( y - y / x * x )
+		  -
+		;
+
+		: printnum
+		  dup
+		  10 mod '0' +
+		  swap 10 / dup
+		  if
+			printnum
+		  else
+			drop
+		  then
+		  echo
+		;
+	`, `
+		: test immediate
+			99 printnum
+			<sp> echo
+			44 printnum
+			<sp> echo
+			100 printnum
+			;
+	`, expectVMOutput(`99 44 100`))
+
 
 	k.tests.run(t)
 }
