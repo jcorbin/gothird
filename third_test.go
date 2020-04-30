@@ -437,16 +437,93 @@ func Test_kernel(t *testing.T) {
 		  then
 		  echo
 		;
+
+		: .
+		  dup 0 <
+		  if
+			'-' echo minus
+		  then
+		  printnum
+		  <sp> echo
+		;
+
+		: cr
+			<nl> echo
+			;
 	`, `
 		: test immediate
-			99 printnum
-			<sp> echo
-			44 printnum
-			<sp> echo
-			100 printnum
+			99 .
+			44 .
+			100 .
+			cr
 			;
-	`, expectVMOutput(`99 44 100`))
+	`, expectVMOutput("99 44 100 \n"))
 
+	k.addSource("more bools", `
+		: > swap < ;
+		: <= 1 + < ;
+		: >= swap <= ;
+	`, `
+		: test immediate
+			5 4 >
+			5 5 >
+
+			5 5 <=
+			5 4 <=
+			4 5 <=
+
+			5 5 >=
+			5 4 >=
+			4 5 >=
+
+			;
+	`, expectVMStack(
+		1, 0,
+		1, 0, 1,
+		1, 1, 0,
+	))
+
+	k.addSource("loop", `
+		: i r @ 1 - @ ;
+		: j r @ 3 - @ ;
+
+		: do immediate
+		  ' swap ,              ( compile 'swap' to swap the limit and start )
+		  ' tor ,               ( compile to push the limit onto the return stack )
+		  ' tor ,               ( compile to push the start on the return stack )
+		  here                  ( save this address so we can branch back to it )
+		;
+
+		: inci
+		  r @ 1 -               ( get the pointer to i )
+		  inc                   ( add one to it )
+		  r @ 1 - @             ( find the value again )
+		  r @ 2 - @             ( find the limit value )
+		  <
+		  if
+			r @ @ @
+			r @ @ +
+			r @ !
+			exit          ( branch )
+		  then
+		  fromr 1 +
+		  fromr drop
+		  fromr drop
+		  tor
+		;
+
+		: loop immediate ' inci , here - , ;
+
+		: loopexit
+		  fromr drop            ( pop off our return address )
+		  fromr drop            ( pop off i )
+		  fromr drop            ( pop off the limit of i )
+		;                       ( and return to the caller's caller routine )
+	`, `
+		: test immediate
+		  11 1 do i . loop cr
+		  ;
+	`, expectVMOutput("1 2 3 4 5 6 7 8 9 10 \n"))
 
 	k.tests.run(t)
 }

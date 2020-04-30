@@ -404,7 +404,7 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
   inc                   ( add one to it )
   r @ 1 - @             ( find the value again )
   r @ 2 - @             ( find the limit value )
-  <=
+  <
   if
     r @ @ @ r @ @ + r @ ! exit          ( branch )
   then
@@ -414,7 +414,7 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
   tor
 ;
 
-: loop immediate ' inci @ here - , ;
+: loop immediate ' inci , here - , ;
 
 : loopexit
   fromr drop            ( pop off our return address )
