@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -525,6 +526,24 @@ func Test_kernel(t *testing.T) {
 		  ;
 	`, expectVMOutput("1 2 3 4 5 6 7 8 9 10 \n"))
 
+	k.addSource("runtime define", `
+	( :: is going to be a word that does ':' at runtime )
+	: :: ; ;
+	: fix-:: immediate 1 ' :: ! ; ( vmCodeDefine = 1 )
+	fix-::
+
+	( Override old definition of ':' with a new one that invokes ] )
+	: : immediate :: r dec ] ;
+
+	`, `
+		: foo 'a' echo ;
+		: bar 'b' echo ;
+
+		: test immediate
+		  foo bar foo bar
+		  ;
+	`, expectVMRStack(), expectVMOutput(`abab`))
+
 	k.tests.run(t)
 }
 
@@ -553,18 +572,34 @@ func (k *kernel) addSource(
 	for i, name := range k.names {
 		vmt = vmt.withNamedInput("kernel_"+name, k.inputs[i])
 	}
-	vmt = vmt.withNamedInput(name, input)
-	if len(test) > 0 {
+
+	const tronCode = `
+		: flags! rb @ 1 - ! exit
+		: tron  immediate 1 flags! exit
+		: troff immediate 0 flags! exit`
+	tron := false
+
+	if strings.HasPrefix(input, "tron") {
+		input = input[4:]
 		vmt = vmt.
-			withNamedInput("tron", `
-				: flags! rb @ 1 - ! exit
-				: tron  immediate 1 flags! exit
-				: troff immediate 0 flags! exit`).
-			withNamedInput("kernel_test_"+name, test).
-			withNamedInput("kernel_test_run", `
-				tron test
-			`)
+			withNamedInput("tron", tronCode).
+			withNamedInput("tron_over", "\ntron\n")
+		tron = true
 	}
+
+	vmt = vmt.withNamedInput(name, input)
+
+	if len(test) > 0 {
+		if !tron {
+			vmt = vmt.withNamedInput("tron", tronCode)
+		}
+		vmt = vmt.withNamedInput("kernel_test_"+name, test)
+		if !tron {
+			vmt = vmt.withNamedInput("kernel_test_run", "\ntron test\n")
+		}
+		tron = true
+	}
+
 	vmt = vmt.apply(wraps...)
 
 	k.names = append(k.names, name)

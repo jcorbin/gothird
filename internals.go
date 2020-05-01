@@ -374,7 +374,7 @@ func (vm *VM) rstack() []int {
 	if r < rb-1 {
 		vm.halt(retUnderError(r))
 	} else if r < rb {
-		return nil
+		return []int{}
 	}
 	rstack := make([]int, r-rb+1)
 	vm.loadInto(rb, rstack)

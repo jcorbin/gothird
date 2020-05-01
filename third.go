@@ -430,11 +430,11 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 
 : :: ;                  ( :: is going to be a word that does ':' at runtime )
 
-: fix-:: immediate 3 ' :: ! ;
+: fix-:: immediate 1 ' :: ! ; ( vmCodeDefine = 1 )
 fix-::
 
 ( Override old definition of ':' with a new one that invokes ] )
-: : immediate :: ] ;
+: : immediate :: r dec ] ;
 
 : command
   here 5 !              ( store dict pointer in temp variable )
