@@ -548,9 +548,14 @@ func Test_kernel(t *testing.T) {
 		: _z! 5 ! exit
 
 		: execute
-		  8 !
-		  ' exit 9 !
-		  8 tor ;
+		  dup not if            ( execute an exit on behalf of caller )
+		    fromr drop          ( pop up to the caller's return )
+			8 !                 ( hacked unary drop of the exit code )
+		    ;                   ( back to the caller's caller )
+		  then
+		  8 !                   ( write code into temporary region )
+		  ' exit 9 !            ( with a following exit )
+		  8 tor ;               ( jump into temporary region )
 
 		: command
 		  here _z!              ( store dict pointer in temp variable )
@@ -571,14 +576,11 @@ func Test_kernel(t *testing.T) {
 		  then
 		  tail command
 		;
+
+		: [ immediate command ;
 	`, `tron
 
-		: bye immediate fromr 0 * _z ! ; ( hacked unary drop )
-
-		: test immediate command ;
-		test
-
-		42 . cr bye
+		[ 42 . cr ;
 
 		108 . cr
 	`, expectVMStack(), expectVMOutput("42 \n"))

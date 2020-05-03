@@ -423,10 +423,14 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
 ;                       ( and return to the caller's caller routine )
 
 : execute
-  8 !
-  ' exit 9 !
-  8 tor
-;
+  dup not if            ( execute an exit on behalf of caller )
+	fromr drop          ( pop up to the caller's return )
+	8 !                 ( hacked unary drop of the exit code )
+	;                   ( back to the caller's caller )
+  then
+  8 !                   ( write code into temporary region )
+  ' exit 9 !            ( with a following exit )
+  8 tor ;               ( jump into temporary region )
 
 : :: ;                  ( :: is going to be a word that does ':' at runtime )
 
@@ -506,8 +510,6 @@ fix-::
 : _welcome " Welcome to THIRD.
 Ok.
 " ;
-
-: ; immediate ' exit , command exit
 
 [
 
