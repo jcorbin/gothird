@@ -51,9 +51,10 @@ func (vm *VM) stor(addr uint, values ...int) {
 }
 
 func (vm *VM) loadProg() int {
-	if memBase := uint(vm.load(11)); vm.prog < memBase {
-		vm.halt(progError(vm.prog))
-	}
+	// FIXME conflicts with low tmp space needed by third's execute
+	// if memBase := uint(vm.load(11)); vm.prog < memBase {
+	// 	vm.halt(progError(vm.prog))
+	// }
 	val := vm.load(vm.prog)
 	vm.prog++
 	return val

@@ -527,14 +527,13 @@ func Test_kernel(t *testing.T) {
 	`, expectVMOutput("1 2 3 4 5 6 7 8 9 10 \n"))
 
 	k.addSource("runtime define", `
-	( :: is going to be a word that does ':' at runtime )
-	: :: ; ;
-	: fix-:: immediate 1 ' :: ! ; ( vmCodeDefine = 1 )
-	fix-::
+		( :: is going to be a word that does ':' at runtime )
+		: :: ; ;
+		: fix-:: immediate 1 ' :: ! ; ( vmCodeDefine = 1 )
+		fix-::
 
-	( Override old definition of ':' with a new one that invokes ] )
-	: : immediate :: r dec ] ;
-
+		( Override old definition of ':' with a new one that invokes ] )
+		: : immediate :: r dec ] ;
 	`, `
 		: foo 'a' echo ;
 		: bar 'b' echo ;
@@ -543,6 +542,46 @@ func Test_kernel(t *testing.T) {
 		  foo bar foo bar
 		  ;
 	`, expectVMRStack(), expectVMOutput(`abab`))
+
+	k.addSource("command mode", `
+		: _z  5 @ exit
+		: _z! 5 ! exit
+
+		: execute
+		  8 !
+		  ' exit 9 !
+		  8 tor ;
+
+		: command
+		  here _z!              ( store dict pointer in temp variable )
+		  _read                 ( compile a word )
+		                        ( if we get control back: )
+		  here _z
+		  = if
+			tail command        ( we didn't compile anything )
+		  then
+		  here 1 - h !          ( decrement the dictionary pointer )
+		  here _z               ( get the original value )
+		  = if
+			here @              ( get the word that was compiled )
+			execute             ( and run it )
+		  else
+			here @              ( else it was an integer constant, so push it )
+			here 1 - h !        ( and decrement the dictionary pointer again )
+		  then
+		  tail command
+		;
+	`, `tron
+
+		: bye immediate fromr 0 * _z ! ; ( hacked unary drop )
+
+		: test immediate command ;
+		test
+
+		42 . cr bye
+
+		108 . cr
+	`, expectVMStack(), expectVMOutput("42 \n"))
 
 	k.tests.run(t)
 }
@@ -592,6 +631,9 @@ func (k *kernel) addSource(
 	if len(test) > 0 {
 		if !tron {
 			vmt = vmt.withNamedInput("tron", tronCode)
+		}
+		if strings.HasPrefix(test, "tron") {
+			tron = true
 		}
 		vmt = vmt.withNamedInput("kernel_test_"+name, test)
 		if !tron {
