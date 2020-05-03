@@ -1,293 +1,88 @@
 package main
 
-import (
-	"bytes"
-	"io"
-	"strings"
-)
+import "strings"
 
-//// Section 3: Building THIRD
+type thirdSource struct{ *strings.Reader }
 
-var thirdKernel = thirdSource{}
+func (thirdSource) Name() string { return "third" }
 
-type thirdSource struct{}
+var thirdKernel = thirdSource{strings.NewReader(`
 
-func (thirdSource) Name() string { return "third.fs" }
+exit : immediate _read @ ! - * / <0 echo key pick
 
-// In this section, I'm going to keep my conversation out here, rather than
-// using fake comments-- because we'll have real comments eventually.
-func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
-	flush := func(wto io.WriterTo) {
-		if err != nil {
-			return
-		}
-		var m int64
-		m, err = wto.WriteTo(w)
-		n += m
-	}
+: r 1 exit
 
-	var buf bytes.Buffer
-	line := func(parts ...string) {
-		if err == nil {
-			for _, s := range parts {
-				buf.WriteString(s)
-			}
-			buf.WriteByte('\n')
-			flush(&buf)
-		}
-	}
+: ] r @ 1 - r ! _read ]
 
-	// The first thing we have to do is give the symbols for our built-ins.
-	line(`exit : immediate _read @ ! - * / <0 echo key pick`)
+: main immediate r @ 7 ! ]
+main
 
-	// Next we want to be mildly self commenting, so we define the word 'r' to
-	// push the *address of the return stack pointer* onto the stack--NOT the
-	// value of the return stack pointer.  (In fact, when we run r, the value
-	// of the return stack pointer is temporarily changed.)
-	line(`: r 1 exit`)
+: _x  3 @ exit
+: _x! 3 ! exit
+: _y  4 @ exit
+: _y! 4 ! exit
 
-	// Next, we're currently executing a short loop that contains _read and
-	// recursion, which is slowly blowing up the return stack.  So let's define
-	// a new word, from which you can never return.  What it does is drops the
-	// top value off the return stack, calls _read, then calls itself.  Because
-	// it kills the top of the return stack, it can recurse indefinitely.
-	line(`: ]`,
-		` r @`,   // Get the value of the return stack pointer
-		` 1 -`,   // Subtract one
-		` r !`,   // Store it back into the return stack pointer
-		` _read`, // Read and compile one word
-		` ]`)     // Start over
+: swap _x! _y! _x _y exit
 
-	// Notice that we don't need to exit, since we never come back. Also, it's
-	// possible that an immediate word may get run during _read, and that _read
-	// will never return!
+: + 0 swap - - exit
 
-	// Now let's get compile running.
-	line(`: main immediate ]`)
-	line(`main`)
+: dup _x! _x _x exit
 
-	// Next, we want to define some temporary variables for locations
-	// 3, 4, and 5, since this'll make our code look clearer.
-	line(`: _x  3 @ exit`)
-	line(`: _x! 3 ! exit`)
-	line(`: _y  4 @ exit`)
-	line(`: _y! 4 ! exit`)
+: inc dup @ 1 + swap ! exit
 
-	// Ok.  Now, we want to make THIRD look vaguely like FORTH, so we're going
-	// to define ';'.  What ; ought to do is terminate a compilation, and turn
-	// control over to the command-mode handler. We don't have one, so all we
-	// want ';' to do for now is compile 'exit' at the end of the current word.
-	// To do this we'll need several other words.
+: h 0 exit
 
-	// Swap by writing out the top two elements into temps, and then reading
-	// them back in the other order.
-	line(`: swap _x! _y! _x _y exit`)
-	// Take another look and make sure you see why that works, since it LOOKS
-	// like I'm reading them back in the same order--in fact, it not only looks
-	// like it, but I AM!
+: , h @ ! h inc exit
 
-	// Addition might be nice to have.  To add, we need to negate the top
-	// element of the stack, and then subtract. To negate, we subtract from 0.
-	line(
-		`: +`,
-		` 0 swap -`,
-		` -`,
-		` exit`)
+: ' r @ @ dup 1 + r @ ! @ exit
 
-	// Create a copy of the top of stack
-	line(`: dup _x! _x _x exit`)
+: ; immediate ' exit , exit
 
-	// Get a mnemonic name for our dictionary pointer--we need to compile
-	// stuff, so it goes through this.
-	line(`: h 0 exit`)
+: drop 0 * + ;
 
-	// We're going to need to advance that pointer, so let's make a generic
-	// pointer-advancing function. Given a pointer to a memory location,
-	// increment the value at that memory location.
-	line(`: inc`,
-		` dup @`,  // Get another copy of the address, and get the value
-		``,        // so now we have value, address on top of stack.
-		` 1 +`,    // Add one to the value
-		` swap`,   // Swap to put the address on top of the stack
-		` ! exit`) // Write it to memory
+: dec dup @ 1 - swap ! ;
 
-	// , is a standard FORTH word.  It should write the top of stack into the
-	// dictionary, and advance the pointer
-	line(`: ,`,
-		` h @`,   // Get the value of the dictionary pointer
-		` !`,     // Write the top of stack there
-		` h inc`, // And increment the dictionary pointer
-		` exit`)
+: tor r @ @ swap r @ ! r @ 1 + r ! r @ ! ;
+: fromr r @ @ r @ 1 - r ! r @ @ swap r @ ! ;
 
-	// ' is a standard FORTH word.  It should push the address of the word that
-	// follows it onto the stack.  We could do this by making ' immediate, but
-	// then it'd need to parse the next word. Instead, we compile the next word
-	// as normal.  When ' is executed, the top of the return stack will point
-	// into the instruction stream immediately after the ' .  We push the word
-	// there, and advance the return stack pointer so that we don't execute it.
-	line(`: '`,
-		` r @`,   // Get the address of the top of return stack
-		``,       // We currently have a pointer to the top of return stack
-		` @`,     // Get the value from there
-		``,       // We currently have a pointer to the instruction stream
-		` dup`,   // Get another copy of it--the bottom copy will stick
-		``,       // around until the end of this word
-		` 1 +`,   // Increment the pointer, pointing to the NEXT instruction
-		` r @ !`, // Write it back onto the top of the return stack
-		``,       // We currently have our first copy of the old pointer
-		``,       // to the instruction stream
-		` @`,     // Get the value there--the address of the "next word"
-		` exit`)
+: tail fromr fromr drop tor ;
 
-	// Now we're set.  ; should be an immediate word that pushes the address of
-	// exit onto the stack, then writes it out.
-	line(`: ; immediate`,
-		` ' exit`, // Get the address of exit
-		` ,`,      // Compile it
-		` exit`)   // And we should return
+: minus 0 swap - ;
+: bnot 1 swap - ;
+: < - <0 ;
 
-	// Now let's test out ; by defining a useful word:
-	line(`: drop 0 * + ;`)
+: logical dup 0 < swap minus 0 < + ;
+: not logical bnot ;
+: = - not ;
 
-	// Since we have 'inc', we ought to make 'dec':
-	line(`: dec dup @ 1 - swap ! ;`)
+: branch r @ @ @ r @ @ + r @ ! ;
+: computebranch 1 - * 1 + ;
 
-	// Our next goal, now that we have ;, is to implement if-then.  To do this,
-	// we'll need to play fast and loose with the return stack, so let's make
-	// some words to save us some effort.
+: notbranch
+  not
+  r @ @ @
+  computebranch
+  r @ @ +
+  r @ !
+  ;
 
-	// First we want a word that pops off the top of the normal stack and
-	// pushes it on top of the return stack.  We'll call this 'tor', for
-	// TO-Return-stack.   It sounds easy, but when tor is running, there's an
-	// extra value on the return stack--tor's return address!  So we have to
-	// pop that off first...  We better just bite the bullet and code it
-	// out--but we can't really break it into smaller words, because that'll
-	// trash the return stack.
-	line(`: tor`,
-		` r @ @`,       // Get the value off the top of the return stack
-		` swap`,        // Bring the value to be pushed to the top of stack
-		` r @ !`,       // Write it over the current top of return stack
-		` r @ 1 + r !`, // Increment the return stack pointer--but can't use inc
-		` r @ !`,       // Store our return address back on the return stack
-		` ;`)
+: here h @ ;
 
-	// Next we want the opposite routine, which pops the top of the return
-	// stack, and puts it on the normal stack.
-	line(`: fromr`,
-		` r @ @`,       // Save old value
-		` r @ 1 - r !`, // Decrement pointer
-		` r @ @`,       // Get value that we want off
-		` swap`,        // Bring return address to top
-		` r @ !`,       // Store it and return
-		` ;`)
+: if immediate ' notbranch , here 0 , ;
+: then immediate dup here swap - swap ! ;
 
-	// Now, if we have a routine that's recursing, and we want to be polite
-	// about the return stack, right before we recurse we can run { fromr drop
-	// } so the stack won't blow up.  This means, though, that the first time
-	// we enter this recursive routine, we blow our *real* return address--so
-	// when we're done, we'll return up two levels. To save a little, we make
-	// 'tail' mean { fromr drop }; however, it's more complex since there's a
-	// new value on top of the return stack.
-	line(`: tail fromr fromr drop tor ;`)
+: find-) key ')' = not if tail find-) then ;
 
-	// Now, we want to do 'if'.  To do this, we need to convert values to
-	// boolean values.  The next few words set this up.
-
-	// minus gives us unary negation.
-	line(`: minus 0 swap - ;`)
-
-	// If top of stack is boolean, bnot gives us inverse
-	line(`: bnot 1 swap - ;`)
-
-	// To compare two numbers, subtract and compare to 0.
-	line(`: < - <0 ;`)
-
-	// logical turns the top of stack into either 0 or 1.
-	line(`: logical   `,
-		` dup`,        // Get two copies of it
-		` 0 <`,        // 1 if < 0, 0 otherwise
-		` swap minus`, // Swap number back up, and take negative
-		` 0 <`,        // 1 if original was > 0, 0 otherwise
-		` +`,          // Add them up--has to be 0 or 1!
-		` ;`)
-
-	// not returns 1 if top of stack is 0, and 0 otherwise
-	line(`: not logical bnot ;`)
-
-	// We can test equality by subtracting and comparing to 0.
-	line(`: = - not ;`)
-
-	// Just to show how you compute a branch:  Suppose you've compiled a call
-	// to branch, and immediately after it is an integer constant with the
-	// offset of how far to branch. To branch, we use the return stack to read
-	// the offset, and add that on to the top of the return stack, and return.
-	line(`: branch`,
-		` r @`,   // Address of top of return stack
-		` @`,     // Our return address
-		` @`,     // Value from there: the branch offset
-		` r @ @`, // Our return address again
-		` +`,     // The address we want to execute at
-		` r @ !`, // Store it back onto the return stack
-		` ;`)
-
-	// For conditional branches, we want to branch by a certain amount if true,
-	// otherwise we want to skip over the branch offset constant--that is,
-	// branch by one.  Assuming that the top of the stack is the branch offset,
-	// and the second on the stack is 1 if we should branch, and 0 if not, the
-	// following computes the correct branch offset.
-	line(`: computebranch 1 - * 1 + ;`)
-
-	// Branch if the value on top of the stack is 0.
-	line(`: notbranch`,
-		` not`,
-		` r @ @ @`,       // Get the branch offset
-		` computebranch`, // Adjust as necessary
-		` r @ @ +`,       // Calculate the new address
-		` r @ !`,         // Store it
-		` ;`)
-
-	// here is a standard FORTH word which returns a pointer to the current
-	// dictionary address--that is, the value of the dictionary pointer.
-	line(`: here h @ ;`)
-
-	// We're ALL SET to compile if...else...then constructs! Here's what we do.
-	// When we get 'if', we compile a call to notbranch, and then compile a
-	// dummy offset, because we don't know where the 'then' will be.  On the
-	// *stack* we leave the address where we compiled the dummy offset. 'then'
-	// will calculate the offset and fill it in for us.
-	line(`: if immediate`,
-		` ' notbranch ,`, // Compile notbranch
-		` here`,          // Save the current dictionary address
-		` 0 ,`,           // Compile a dummy value
-		` ;`)
-
-	// then expects the address to fixup to be on the stack.
-	line(`: then immediate`,
-		` dup`,    // Make another copy of the address
-		` here`,   // Find the current location, where to branch to
-		` swap -`, // Calculate the difference between them
-		` swap !`, // Bring the address to the top, and store it.
-		` ;`)
-
-	// Now that we can do if...then statements, we can do some parsing!  Let's
-	// introduce real FORTH comments. find-) will scan the input until it finds
-	// a ), and exit.
-	line(`: find-)`,
-		` key`,         // Read in a character
-		` ')' =`,       // Compare it to close parentheses
-		` not if`,      // If it's not equal
-		` tail find-)`, // repeat (popping R stack)
-		` then`,        // Otherwise branch here and exit
-		` ;`)
-
-	flush(strings.NewReader(`
 : ( immediate find-) ;
 
 ( we should be able to do FORTH-style comments now )
 
-( now that we've got comments, we can comment the rest of the code
-  in a legitimate [self parsing] fashion.  Note that you can't
-  nest parentheses... )
+( this works as follows: ( is an immediate word, so it gets
+  control during compilation.  Then it simply reads in characters
+  until it sees a close parenthesis.  once it does, it exits.
+  if not, it pops off the return stack--manual tail recursion. )
+
+( now that we've got comments, we can comment the rest of the code! )
 
 : else immediate
   ' branch ,            ( compile a definite branch )
@@ -322,17 +117,16 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
   -
 ;
 
+: nl '\n' echo exit
+
 : printnum
   dup
   10 mod '0' +
   swap 10 / dup
   if
-    printnum
-    echo
-  else
-    drop
-    echo
+    printnum 0
   then
+  drop echo
 ;
 
 : .
@@ -344,7 +138,7 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
   <sp> echo
 ;
 
-: debugprint dup . <nl> echo ;
+: debugprint dup . nl ;
 
 ( the following routine takes a pointer to a string, and prints it,
   except for the trailing quote.  returns a pointer to the next word
@@ -420,7 +214,15 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
   fromr drop            ( pop off our return address )
   fromr drop            ( pop off i )
   fromr drop            ( pop off the limit of i )
-;                       ( and return to the caller's caller routine )
+  ;                     ( and return to the caller's caller routine )
+
+: :: ;                  ( :: is going to be a word that does ':' at runtime )
+
+: fix-:: immediate 1 ' :: ! ; ( vmCodeDefine = 1 )
+fix-::
+
+( Override old definition of ':' with a new one that invokes ] )
+: : immediate :: r dec ] ;
 
 : execute
   dup not if            ( execute an exit on behalf of caller )
@@ -431,14 +233,6 @@ func (thirdSource) WriteTo(w io.Writer) (n int64, err error) {
   8 !                   ( write code into temporary region )
   ' exit 9 !            ( with a following exit )
   8 tor ;               ( jump into temporary region )
-
-: :: ;                  ( :: is going to be a word that does ':' at runtime )
-
-: fix-:: immediate 1 ' :: ! ; ( vmCodeDefine = 1 )
-fix-::
-
-( Override old definition of ':' with a new one that invokes ] )
-: : immediate :: r dec ] ;
 
 : command
   here 5 !              ( store dict pointer in temp variable )
@@ -459,6 +253,8 @@ fix-::
   then
   tail command
 ;
+
+: [ immediate command ;
 
 : make-immediate        ( make a word just compiled immediate )
   here 1 -              ( back up a word in the dictionary )
@@ -490,7 +286,7 @@ fix-::
   dup @                 ( save the pointer and get the contents )
   dup ' exit
   = if
-        " ;)" <nl> echo exit
+        " ;)" nl exit
   then
   . " ), "
   1 +
@@ -499,13 +295,11 @@ fix-::
 
 : dump _dump ;
 
-: # . <nl> echo ;
+: # . nl ;
 
 : var <build , does> ;
 : constant <build , does> @ ;
 : array <build allot does> + ;
-
-: [ immediate command ;
 
 : _welcome " Welcome to THIRD.
 Ok.
@@ -515,7 +309,4 @@ Ok.
 
 _welcome
 
-`))
-
-	return
-}
+`)}
