@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"io"
 	"os"
 	"regexp"
 	"time"
@@ -14,9 +13,9 @@ func main() {
 	defer log.Exit()
 
 	var (
-		retBase              = 16
-		memBase              = 80
-		kernel   io.WriterTo = thirdKernel
+		retBase = 16
+		memBase = 80
+
 		memLimit uint
 		timeout  time.Duration
 		trace    bool
@@ -61,7 +60,7 @@ func main() {
 		return vm.Run(ctx)
 	}(context.Background(),
 		WithMemLayout(retBase, memBase),
-		WithInputWriter(kernel),
+		WithInputWriter(thirdKernel),
 		WithInput(os.Stdin),
 		WithOutput(os.Stdout),
 	))

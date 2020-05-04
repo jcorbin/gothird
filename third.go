@@ -1,12 +1,11 @@
 package main
 
-import "strings"
+import (
+	"io"
+	"strings"
+)
 
-type thirdSource struct{ *strings.Reader }
-
-func (thirdSource) Name() string { return "third" }
-
-var thirdKernel = thirdSource{strings.NewReader(`
+const thirdSource = `
 
 exit : immediate _read @ ! - * / <0 echo key pick
 
@@ -308,5 +307,27 @@ Ok.
 [
 
 _welcome
+`
 
-`)}
+type _thirdKernel struct{}
+
+func (_thirdKernel) Name() string { return "third" }
+
+func (_thirdKernel) WriteTo(w io.Writer) (_ int64, err error) {
+	var n int
+	if sw, ok := w.(io.StringWriter); ok {
+		n, err = sw.WriteString(thirdSource)
+	} else {
+		n, err = w.Write([]byte(thirdSource))
+	}
+	return int64(n), err
+}
+
+func (_thirdKernel) Open() io.Reader {
+	return struct {
+		_thirdKernel
+		io.Reader
+	}{Reader: strings.NewReader(thirdSource)}
+}
+
+var thirdKernel _thirdKernel
