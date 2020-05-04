@@ -605,7 +605,9 @@ var genThirdFlag = flag.Bool("generate-third", false,
 
 // Test_third tests a, minimally modified copy of, the original third kernel code.
 func Test_Third(t *testing.T) {
-	t.Skip()
+	if *genThirdFlag {
+		t.Skip()
+	}
 	vmTest("third").
 		withInputWriter(thirdKernel).
 		withNamedInput("test", `tron [
