@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 	"text/template"
-	"time"
 )
 
 var testThirdKernel = kernel{name: "third"}
@@ -605,11 +604,12 @@ var genThirdFlag = flag.Bool("generate-third", false,
 // Test_third tests a, minimally modified copy of, the original third kernel code.
 func Test_Third(t *testing.T) {
 	t.Skip()
-	vmTest("setup").
+	vmTest("third").
 		withInputWriter(thirdKernel).
-		withTestHexOutput().
-		withTimeout(10*time.Second).
-		withMemAt(255, 1 /* TRON */).
+		withNamedInput("test", `tron [
+		  11 1 do i . loop nl
+		`).
+		expectOutput("1 2 3 4 5 6 7 8 9 10 \n").
 		run(t)
 }
 
