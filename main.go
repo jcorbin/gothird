@@ -29,7 +29,7 @@ func main() {
 	flag.BoolVar(&dump, "dump", false, "print a dump after execution")
 	flag.Parse()
 
-	if err := func(ctx context.Context, opts ...VMOption) error {
+	log.ErrorIf(func(ctx context.Context, opts ...VMOption) error {
 		if memLimit != 0 {
 			opts = append(opts, WithMemLimit(memLimit))
 		}
@@ -64,9 +64,7 @@ func main() {
 		WithInputWriter(kernel),
 		WithInput(os.Stdin),
 		WithOutput(os.Stdout),
-	); err != nil {
-		log.Errorf("%+v", err)
-	}
+	))
 }
 
 var scanPattern = regexp.MustCompile(`> scan (.+:\d+) .* <- .*`)

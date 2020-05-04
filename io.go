@@ -493,7 +493,6 @@ type logger struct {
 	Out      io.WriteCloser
 	fallback io.WriteCloser
 	buf      bytes.Buffer
-	err      []error
 	errored  bool
 }
 
@@ -511,12 +510,16 @@ func (log *logger) Wrap(pipe func(wc io.WriteCloser) io.WriteCloser) {
 func (log *logger) Unwrap() {
 	log.Lock()
 	defer log.Unlock()
+	log.unwrap()
+}
+
+func (log *logger) unwrap() {
 	if log.fallback != nil {
-		if err := log.Out.Close(); err != nil {
+		out := log.Out
+		log.Out = log.fallback
+		log.fallback = nil
+		if err := out.Close(); err != nil {
 			log.reportError(err)
-		} else {
-			log.Out = log.fallback
-			log.fallback = nil
 		}
 	}
 }
@@ -528,7 +531,7 @@ func (writeNoCloser) Close() error { return nil }
 func (log *logger) Exit() {
 	log.Lock()
 	defer log.Unlock()
-	log.reportError(log.Out.Close())
+	log.unwrap()
 	if log.errored {
 		os.Exit(1)
 	}
@@ -537,17 +540,26 @@ func (log *logger) Exit() {
 func (log *logger) Close() {
 	log.Lock()
 	defer log.Unlock()
-	log.reportError(log.Out.Close())
+	log.unwrap()
 }
 
 func (log *logger) Leveledf(level string) func(mess string, args ...interface{}) {
 	return func(mess string, args ...interface{}) { log.Printf(level, mess, args...) }
 }
 
+func (log *logger) ErrorIf(err error) {
+	if err == nil {
+		return
+	}
+	log.Lock()
+	defer log.Unlock()
+	log.reportError(err)
+}
+
 func (log *logger) Errorf(mess string, args ...interface{}) {
 	log.Lock()
 	defer log.Unlock()
-	log.reportError(log.Out.Close())
+	log.unwrap()
 	log.printf("ERROR", mess, args...)
 	log.errored = true
 }
@@ -555,8 +567,8 @@ func (log *logger) Errorf(mess string, args ...interface{}) {
 func (log *logger) Printf(level, mess string, args ...interface{}) {
 	log.Lock()
 	defer log.Unlock()
-	if len(log.err) == 0 {
-		log.reportError(log.printf(level, mess, args...))
+	if err := log.printf(level, mess, args...); err != nil {
+		log.reportError(err)
 	}
 }
 
@@ -578,20 +590,13 @@ func (log *logger) printf(level, mess string, args ...interface{}) error {
 }
 
 func (log *logger) reportError(err error) {
-	if err == nil {
-		return
-	}
-	log.err = append(log.err, err)
 	if log.fallback != nil {
+		log.Out.Close()
 		log.Out = log.fallback
 		log.fallback = nil
-		for _, err := range log.err {
-			if log.err != nil {
-				log.Errorf("%+v", err)
-			}
-		}
-		log.err = nil
 	}
+	log.printf("ERROR", "%+v", err)
+	log.errored = true
 }
 
 type fmtBuf interface {
