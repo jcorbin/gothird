@@ -68,6 +68,7 @@ func Test_kernel(t *testing.T) {
 		)))
 
 	// Build a main loop that won't exhaust the return stack.
+	// XXX : main immediate r @ 7 ! ] main
 	testThirdKernel.addSource("main", `
 		: r 1 exit
 
@@ -589,6 +590,119 @@ func Test_kernel(t *testing.T) {
 
 		108 . nl
 	`, expectVMStack(), expectVMOutput("42 \n"))
+
+	// TODO queue
+
+	_ = `
+
+: over _x! _y! _y _x _y ;
+
+: add
+  _x!                   ( save the pointer in a temp variable )
+  _x @                  ( get the value pointed to )
+  +                     ( add the increment from on top of the stack )
+  _x !                  ( and save it )
+;
+
+: allot h add ;
+
+: maybebranch
+  logical               ( force the TOS to be 0 or 1 )
+  r @ @ @               ( load the branch offset )
+  computebranch         ( calculate the condition offset [either TOS or 1])
+  r @ @ +               ( add it to the return address )
+  r @ !                 ( store it to our return address and return )
+;
+
+: debugprint dup . nl ;
+
+: _print
+  dup 1 +
+  swap @
+  dup '"' =
+  if
+    drop exit
+  then
+  echo
+  tail _print
+;
+
+: print _print ;
+
+( print the next thing from the instruction stream )
+: immprint
+  r @ @
+  print
+  r @ !
+;
+
+: find-"
+  key dup ,
+  '"' =
+  if
+    exit
+  then
+  tail find-"
+;
+
+: " immediate
+  key drop
+  ' immprint ,
+  find-"
+;
+
+: make-immediate        ( make a word just compiled immediate )
+  here 1 -              ( back up a word in the dictionary )
+  dup dup               ( save the pointer to here )
+  h !                   ( store as the current dictionary pointer )
+  @                     ( get the run-time code pointer )
+  swap                  ( get the dict pointer again )
+  1 -                   ( point to the compile-time code pointer )
+  !                     ( write run-time code pointer on compile-time pointer )
+;
+
+: <build immediate
+  make-immediate        ( make the word compiled so far immediate )
+  ' :: ,                ( compile '::', so we read next word )
+  15 ,                  ( compile 'pushint' )
+  here 0 ,              ( write out a 0 but save address for does> )
+  ' , ,                 ( compile a push that address onto dictionary )
+;
+
+: does> immediate
+  ' command ,           ( jump back into command mode at runtime )
+  here swap !           ( backpatch the build> to point to here )
+  14 ,                  ( compile run-code primitive so we look like a word )
+  ' fromr ,             ( compile fromr, which leaves var address on stack )
+;
+
+: _dump                 ( dump out the definition of a word, sort of )
+  dup " (" . " , "
+  dup @                 ( save the pointer and get the contents )
+  dup ' exit
+  = if
+        " ;)" nl exit
+  then
+  . " ), "
+  1 +
+  tail _dump
+;
+
+: dump _dump ;
+
+: # . nl ;
+
+: var <build , does> ;
+: constant <build , does> @ ;
+: array <build allot does> + ;
+
+: _welcome " Welcome to THIRD.
+Ok.
+" ;
+
+[
+
+_welcome`
 
 	testThirdKernel.addSource("tron", tronCode, "")
 
