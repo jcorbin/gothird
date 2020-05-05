@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"os"
@@ -9,61 +10,59 @@ import (
 )
 
 func main() {
-	log := logger{Out: os.Stderr}
-	defer log.Exit()
-
 	var (
-		retBase = 16
-		memBase = 80
-
 		memLimit uint
 		timeout  time.Duration
 		trace    bool
 		dump     bool
 	)
-
 	flag.UintVar(&memLimit, "mem-limit", 0, "enable memory limit")
 	flag.DurationVar(&timeout, "timeout", 0, "specify a time limit")
 	flag.BoolVar(&trace, "trace", false, "enable trace logging")
 	flag.BoolVar(&dump, "dump", false, "print a dump after execution")
 	flag.Parse()
 
-	log.ErrorIf(func(ctx context.Context, opts ...VMOption) error {
-		if memLimit != 0 {
-			opts = append(opts, WithMemLimit(memLimit))
-		}
+	log := logger{Out: os.Stderr}
+	defer log.Exit()
 
-		if trace {
-			log.Wrap(scanPipe("trace scanner",
-				patternScanner(scanPattern, &locScanner{}),
-				// patternScanner(stepPattern, &retScanner{}),
-			))
-			opts = append(opts, WithLogf(log.Leveledf("TRACE")))
-		}
+	var in bytes.Buffer
+	if trace {
+		in.WriteString("\ntron\n")
+	}
+	in.WriteString("\n[\n")
 
-		vm := New(opts...)
-
-		if dump {
-			lw := &logWriter{logf: log.Leveledf("DUMP")}
-			defer lw.Close()
-			defer vmDumper{vm: vm, out: lw}.dump()
-		}
-
-		defer log.Unwrap()
-
-		if timeout != 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, timeout)
-			defer cancel()
-		}
-
-		return vm.Run(ctx)
-	}(context.Background(),
-		WithMemLayout(retBase, memBase),
+	vm := New(
+		WithLogf(log.Leveledf("TRACE")),
+		WithMemLimit(memLimit),
 		WithInputWriter(thirdKernel),
+		WithInput(NamedReader("<pre-stdin>", &in)),
 		WithInput(os.Stdin),
 		WithOutput(os.Stdout),
-	))
+	)
+
+	if dump {
+		lw := &logWriter{logf: log.Leveledf("DUMP")}
+		defer lw.Close()
+		defer vmDumper{vm: vm, out: lw}.dump()
+	}
+
+	if trace {
+		log.Wrap(scanPipe("trace scanner",
+			patternScanner(scanPattern, &locScanner{}),
+			// patternScanner(stepPattern, &retScanner{}),
+		))
+	}
+
+	defer log.Unwrap()
+
+	ctx := context.Background()
+	if timeout != 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+
+	log.ErrorIf(vm.Run(ctx))
 }
 
 var scanPattern = regexp.MustCompile(`> scan (.+:\d+) .* <- .*`)
