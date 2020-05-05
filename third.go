@@ -265,6 +265,10 @@ fix-::
 ;
 
 : [ immediate command ;
+
+: flags! rb @ 1 - ! exit
+: tron  immediate 1 flags! exit
+: troff immediate 0 flags! exit
 `
 
 type _thirdKernel struct{}

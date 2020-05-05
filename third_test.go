@@ -589,8 +589,15 @@ func Test_kernel(t *testing.T) {
 		108 . nl
 	`, expectVMStack(), expectVMOutput("42 \n"))
 
+	testThirdKernel.addSource("tron", tronCode, "")
+
 	testThirdKernel.tests.run(t)
 }
+
+const tronCode = `
+	: flags! rb @ 1 - ! exit
+	: tron  immediate 1 flags! exit
+	: troff immediate 0 flags! exit`
 
 var genThirdFlag = flag.Bool("generate-third", false,
 	"generate the third.go kernel source from the tested sources in third_test.go")
@@ -744,10 +751,6 @@ func (k *kernel) addSource(
 		vmt = vmt.withNamedInput("kernel_"+name, k.inputs[i])
 	}
 
-	const tronCode = `
-		: flags! rb @ 1 - ! exit
-		: tron  immediate 1 flags! exit
-		: troff immediate 0 flags! exit`
 	tron := false
 
 	if strings.HasPrefix(input, "tron") {
