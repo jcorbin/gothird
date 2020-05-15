@@ -442,6 +442,10 @@ func (vm *VM) scan() (token string) {
 		vm.logf(">", "scan %v %q <- %q", line.inLoc, token, line.Buffer.String())
 	}()
 
+	if err := vm.out.Flush(); err != nil {
+		vm.halt(err)
+	}
+
 	var sb strings.Builder
 	for {
 		if r, err := vm.ioCore.readRune(); err != nil {
@@ -473,6 +477,10 @@ func (vm *VM) writeRune(r rune) {
 }
 
 func (vm *VM) readRune() rune {
+	if err := vm.out.Flush(); err != nil {
+		vm.halt(err)
+	}
+
 	r, err := vm.ioCore.readRune()
 	for r == 0 {
 		if err != nil {
