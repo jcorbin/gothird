@@ -24,8 +24,9 @@ func main() {
 	flag.BoolVar(&dump, "dump", false, "print a dump after execution")
 	flag.Parse()
 
-	log := logger{Out: os.Stderr}
-	defer log.Exit()
+	log := logio.Logger{}
+	log.SetOutput(os.Stderr)
+	defer os.Exit(log.ExitCode())
 
 	var in bytes.Buffer
 	if trace {

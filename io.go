@@ -6,11 +6,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"os"
 	"regexp"
 	"sort"
 	"strconv"
-	"sync"
 
 	"github.com/jcorbin/gothird/internal/panicerr"
 )
@@ -488,117 +486,6 @@ func (buf *lineBuffer) WriteTo(w io.Writer) (n int64, err error) {
 		buf.WriteByte('\n')
 	}
 	return buf.Buffer.WriteTo(w)
-}
-
-type logger struct {
-	sync.Mutex
-	Out      io.WriteCloser
-	fallback io.WriteCloser
-	buf      bytes.Buffer
-	errored  bool
-}
-
-func (log *logger) Wrap(pipe func(wc io.WriteCloser) io.WriteCloser) {
-	log.Lock()
-	defer log.Unlock()
-	wc := log.Out
-	if log.fallback == nil {
-		log.fallback = wc
-		wc = writeNoCloser{wc}
-	}
-	log.Out = pipe(wc)
-}
-
-func (log *logger) Unwrap() {
-	log.Lock()
-	defer log.Unlock()
-	log.unwrap()
-}
-
-func (log *logger) unwrap() {
-	if log.fallback != nil {
-		out := log.Out
-		log.Out = log.fallback
-		log.fallback = nil
-		if err := out.Close(); err != nil {
-			log.reportError(err)
-		}
-	}
-}
-
-type writeNoCloser struct{ io.Writer }
-
-func (writeNoCloser) Close() error { return nil }
-
-func (log *logger) Exit() {
-	log.Lock()
-	defer log.Unlock()
-	log.unwrap()
-	if log.errored {
-		os.Exit(1)
-	}
-}
-
-func (log *logger) Close() {
-	log.Lock()
-	defer log.Unlock()
-	log.unwrap()
-}
-
-func (log *logger) Leveledf(level string) func(mess string, args ...interface{}) {
-	return func(mess string, args ...interface{}) { log.Printf(level, mess, args...) }
-}
-
-func (log *logger) ErrorIf(err error) {
-	if err == nil {
-		return
-	}
-	log.Lock()
-	defer log.Unlock()
-	log.reportError(err)
-}
-
-func (log *logger) Errorf(mess string, args ...interface{}) {
-	log.Lock()
-	defer log.Unlock()
-	log.unwrap()
-	log.printf("ERROR", mess, args...)
-	log.errored = true
-}
-
-func (log *logger) Printf(level, mess string, args ...interface{}) {
-	log.Lock()
-	defer log.Unlock()
-	if err := log.printf(level, mess, args...); err != nil {
-		log.reportError(err)
-	}
-}
-
-func (log *logger) printf(level, mess string, args ...interface{}) error {
-	if level != "" {
-		log.buf.WriteString(level)
-		log.buf.WriteString(": ")
-	}
-	if len(args) > 0 {
-		fmt.Fprintf(&log.buf, mess, args...)
-	} else {
-		log.buf.WriteString(mess)
-	}
-	if b := log.buf.Bytes(); len(b) > 0 && b[len(b)-1] != '\n' {
-		log.buf.WriteByte('\n')
-	}
-	_, err := log.buf.WriteTo(log.Out)
-	return err
-}
-
-func (log *logger) reportError(err error) {
-	if log.fallback != nil {
-		log.Out.Close()
-		log.Out = log.fallback
-		log.fallback = nil
-	}
-	log.printf("ERROR", "%+v", err)
-	log.errored = true
 }
 
 type fmtBuf interface {
