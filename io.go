@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+
+	"github.com/jcorbin/gothird/internal/panicerr"
 )
 
 type inLoc struct {
@@ -303,7 +305,7 @@ func (work pipeWorker) Close() error {
 
 func (work pipeWorker) run(rc io.ReadCloser, fun func(r io.Reader) error) {
 	defer close(work.done)
-	work.done <- isolate(work.name, func() error {
+	work.done <- panicerr.Recover(work.name, func() error {
 		defer rc.Close()
 		err := fun(rc)
 		return err

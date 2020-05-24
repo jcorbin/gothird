@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/jcorbin/gothird/internal/logio"
+	"github.com/jcorbin/gothird/internal/panicerr"
 )
 
 type vmTestCases []vmTestCase
@@ -418,7 +419,7 @@ func (vmt vmTestCase) runVM(ctx context.Context, vm *VM) (rerr error) {
 	for i, op := range vmt.ops {
 		names[i] = runtime.FuncForPC(reflect.ValueOf(op).Pointer()).Name()
 	}
-	return isolate("vmTestCase.ops", func() error {
+	return panicerr.Recover("vmTestCase.ops", func() error {
 		vm.init()
 		for i := 0; i < len(vmt.ops); i++ {
 			if vmt.ops[i] == nil {

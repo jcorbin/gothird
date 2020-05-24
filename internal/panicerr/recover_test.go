@@ -1,4 +1,4 @@
-package main
+package panicerr_test
 
 import (
 	"errors"
@@ -9,9 +9,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	. "github.com/jcorbin/gothird/internal/panicerr"
 )
 
-func Test_isolate(t *testing.T) {
+func Test_Recover(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		err       string
@@ -68,7 +70,7 @@ func Test_isolate(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := isolate(tc.name, tc.fun)
+			err := Recover(tc.name, tc.fun)
 			if tc.err == "" {
 				assert.NoError(t, err)
 			} else {
@@ -77,7 +79,7 @@ func Test_isolate(t *testing.T) {
 					assert.EqualError(t, errors.Unwrap(err), tc.wraps, "expected panic(error) value")
 				}
 			}
-			stack := panicErrorStack(err)
+			stack := PanicStack(err)
 			if tc.haveStack {
 				assert.NotEqual(t, "", stack, "expected a stack trace")
 			} else {
@@ -90,13 +92,13 @@ func Test_isolate(t *testing.T) {
 	}
 }
 
-func Test_isolate_stacktrace(t *testing.T) {
-	err := isolate("", func() error {
+func Test_Recover_stacktrace(t *testing.T) {
+	err := Recover("", func() error {
 		panic("nope")
 	})
-	require.Error(t, err, "must have an isolate error")
+	require.Error(t, err, "must have Recover()ed an error")
 
 	assert.True(t,
-		strings.HasSuffix(fmt.Sprintf("%+v", err), panicErrorStack(err)),
+		strings.HasSuffix(fmt.Sprintf("%+v", err), PanicStack(err)),
 		"expected verbose format to end with a stack trace")
 }

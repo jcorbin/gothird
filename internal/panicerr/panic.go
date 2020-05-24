@@ -1,29 +1,10 @@
-package main
+package panicerr
 
 import (
 	"errors"
 	"fmt"
 	"runtime/debug"
 )
-
-func isolate(name string, f func() error) error {
-	errch := make(chan error, 1)
-	go func() {
-		defer close(errch)
-		defer recoverExitError(name, errch)
-		defer recoverPanicError(name, errch)
-		errch <- f()
-	}()
-	return <-errch
-}
-
-func recoverExitError(name string, errch chan<- error) {
-	select {
-	case errch <- exitError(name):
-	default:
-		// assumes that that the happy path does a (maybe nil) send
-	}
-}
 
 func recoverPanicError(name string, errch chan<- error) {
 	var pe panicError
@@ -35,15 +16,6 @@ func recoverPanicError(name string, errch chan<- error) {
 		default:
 		}
 	}
-}
-
-type exitError string
-
-func (name exitError) Error() string {
-	if name == "" {
-		return "runtime.Goexit called"
-	}
-	return fmt.Sprintf("%v called runtime.Goexit", string(name))
 }
 
 type panicError struct {
@@ -72,7 +44,15 @@ func (pe panicError) Unwrap() error {
 	return err
 }
 
-func panicErrorStack(err error) string {
+// IsPanic returns true if err indicates a recovered goroutine panic.
+func IsPanic(err error) bool {
+	var pe panicError
+	return errors.As(err, &pe)
+}
+
+// PanicStack returns a non-empty stacktrace string if err is a recovered
+// goroutine panic.
+func PanicStack(err error) string {
 	var pe panicError
 	if errors.As(err, &pe) {
 		return string(pe.stack)

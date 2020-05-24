@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/jcorbin/gothird/internal/logio"
+	"github.com/jcorbin/gothird/internal/panicerr"
 )
 
 func Test_memCore(t *testing.T) {
@@ -187,7 +188,7 @@ func Test_memCore(t *testing.T) {
 }
 
 func isolateTest(t *testing.T, f func(t *testing.T)) {
-	if err := isolate(t.Name(), func() error {
+	if err := panicerr.Recover(t.Name(), func() error {
 		f(t)
 		return nil
 	}); err != nil {

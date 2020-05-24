@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+
+	"github.com/jcorbin/gothird/internal/panicerr"
 )
 
 func New(opts ...VMOption) *VM {
@@ -14,7 +16,7 @@ func New(opts ...VMOption) *VM {
 }
 
 func (vm *VM) Run(ctx context.Context) error {
-	err := isolate("VM", func() error {
+	err := panicerr.Recover("VM", func() error {
 		return vm.run(ctx)
 	})
 	if err == nil || errors.Is(err, io.EOF) {
