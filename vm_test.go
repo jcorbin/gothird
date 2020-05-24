@@ -161,7 +161,7 @@ func (vmt vmTestCase) withR(val int) vmTestCase {
 
 func (vmt vmTestCase) withPageSize(pageSize uint) vmTestCase {
 	vmt.opts = append(vmt.opts, optFunc(func(vm *VM) {
-		vm.pageSize = pageSize
+		vm.mem.PageSize = pageSize
 	}))
 	return vmt
 }
@@ -281,8 +281,6 @@ func (vmt vmTestCase) expectMemAt(addr uint, values ...int) vmTestCase {
 				a := addr + uint(i)
 				assert.Equal(t, value, vm.load(a), "expected memory value @%v", a)
 			}
-			t.Logf("bases: %v", vm.bases)
-			t.Logf("pages: %v", vm.pages)
 		}
 	})
 	return vmt
@@ -447,7 +445,7 @@ func (vmt *vmTestCase) buildVM(t *testing.T) *VM {
 	const defaultMemLimit = 4 * 1024
 
 	var vm VM
-	vm.memLimit = defaultMemLimit
+	vm.mem.Limit = defaultMemLimit
 
 	var opt VMOption
 	for _, o := range vmt.opts {

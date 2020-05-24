@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"text/template"
+
+	"github.com/jcorbin/gothird/internal/mem"
 )
 
 var testThirdKernel = kernel{name: "third"}
@@ -165,7 +167,7 @@ func Test_kernel(t *testing.T) {
 	`,
 		expectVMRStack(1111),
 		expectVMStack(42),
-		expectVMError(memLimitError{1024 * 1024, "get"}))
+		expectVMError(mem.LimitError{1024 * 1024, "load"}))
 
 	// swap two values on the top of the stack.
 	testThirdKernel.addSource("swap", `

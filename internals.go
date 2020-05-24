@@ -33,7 +33,7 @@ func (vm *VM) halt(err error) {
 }
 
 func (vm *VM) load(addr uint) int {
-	val, err := vm.memCore.load(addr)
+	val, err := vm.mem.Load(addr)
 	if err != nil {
 		vm.halt(err)
 	}
@@ -41,13 +41,13 @@ func (vm *VM) load(addr uint) int {
 }
 
 func (vm *VM) loadInto(addr uint, buf []int) {
-	if err := vm.memCore.loadInto(addr, buf); err != nil {
+	if err := vm.mem.LoadInto(addr, buf); err != nil {
 		vm.halt(err)
 	}
 }
 
 func (vm *VM) stor(addr uint, values ...int) {
-	if err := vm.memCore.stor(addr, values...); err != nil {
+	if err := vm.mem.Stor(addr, values...); err != nil {
 		vm.halt(err)
 	}
 }
@@ -188,11 +188,11 @@ const (
 // TODO use a portal instead
 
 func (vm *VM) checkFlag(flag int) bool {
-	retBase, err := vm.memCore.load(10)
+	retBase, err := vm.mem.Load(10)
 	if err != nil {
 		return false
 	}
-	val, err := vm.memCore.load(uint(retBase) - 1)
+	val, err := vm.mem.Load(uint(retBase) - 1)
 	if err != nil {
 		return false
 	}
@@ -254,10 +254,10 @@ const (
 )
 
 func (vm *VM) init() {
-	pageSize := vm.pageSize
+	pageSize := vm.mem.PageSize
 	if pageSize == 0 {
 		pageSize = defaultPageSize
-		vm.pageSize = pageSize
+		vm.mem.PageSize = pageSize
 	}
 
 	retBase := uint(vm.load(10))

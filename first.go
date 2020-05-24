@@ -1,5 +1,7 @@
 package main
 
+import "github.com/jcorbin/gothird/internal/mem"
+
 //// Section 1:  FIRST
 
 //// Environment
@@ -29,7 +31,7 @@ type VM struct {
 	// Main memory is a large array of ints.  When we speak of addresses, we
 	// actually mean indices into main memory.  Main memory is used for two
 	// things, primarily: the return stack and the dictionary.
-	memCore
+	mem mem.Ints
 }
 
 // The return stack is a LIFO data structure, independent of the

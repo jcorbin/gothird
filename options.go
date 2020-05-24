@@ -105,7 +105,7 @@ func (o teeOption) apply(vm *VM) {
 }
 
 func (lim memLimitOption) apply(vm *VM) {
-	vm.memLimit = uint(lim)
+	vm.mem.Limit = uint(lim)
 }
 
 type memLayoutOption struct {

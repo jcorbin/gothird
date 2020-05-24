@@ -46,14 +46,14 @@ func (dump *vmDumper) dumpMem() {
 	memBase := uint(dump.vm.load(11))
 
 	if dump.addrWidth == 0 {
-		dump.addrWidth = len(strconv.Itoa(int(dump.vm.memSize()))) + 1
+		dump.addrWidth = len(strconv.Itoa(int(dump.vm.mem.Size()))) + 1
 	}
 	if dump.words == nil {
 		dump.scanWords()
 	}
 	dump.wordID = len(dump.words) - 1
 	var buf lineBuffer
-	for addr := uint(0); addr < uint(dump.vm.memSize()); {
+	for addr := uint(0); addr < uint(dump.vm.mem.Size()); {
 		// section headers
 		switch addr {
 		case retBase:
@@ -208,7 +208,7 @@ func (dump *vmDumper) formatName(buf fmtBuf, sym int) {
 
 func (dump *vmDumper) scanWords() {
 	for word := dump.vm.last; word != 0; {
-		if word >= uint(dump.vm.memSize()) {
+		if word >= uint(dump.vm.mem.Size()) {
 			return
 		}
 		dump.words = append(dump.words, word)
