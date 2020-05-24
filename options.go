@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"io"
 	"io/ioutil"
+
+	"github.com/jcorbin/gothird/internal/flushio"
 )
 
 type VMOption interface{ apply(vm *VM) }
@@ -81,14 +83,14 @@ func (o outputOption) apply(vm *VM) {
 	if vm.out != nil {
 		vm.out.Flush()
 	}
-	vm.out = newWriteFlusher(o.Writer)
+	vm.out = flushio.NewWriteFlusher(o.Writer)
 	if cl, ok := o.Writer.(io.Closer); ok {
 		vm.closers = append(vm.closers, cl)
 	}
 }
 
 func (o teeOption) apply(vm *VM) {
-	vm.out = multiWriteFlusher(vm.out, newWriteFlusher(o.Writer))
+	vm.out = flushio.WriteFlushers(vm.out, flushio.NewWriteFlusher(o.Writer))
 	if cl, ok := o.Writer.(io.Closer); ok {
 		vm.closers = append(vm.closers, cl)
 	}

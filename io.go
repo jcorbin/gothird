@@ -5,11 +5,11 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"regexp"
 	"sort"
 	"strconv"
 
+	"github.com/jcorbin/gothird/internal/flushio"
 	"github.com/jcorbin/gothird/internal/panicerr"
 	"github.com/jcorbin/gothird/internal/runeio"
 )
@@ -34,7 +34,7 @@ type ioCore struct {
 	lastLine inLine
 	scanLine inLine
 
-	out writeFlusher
+	out flushio.WriteFlusher
 
 	closers []io.Closer
 }
@@ -94,89 +94,6 @@ func (ioc *ioCore) Close() (err error) {
 		}
 	}
 	return err
-}
-
-type writeFlusher interface {
-	io.Writer
-	Flush() error
-}
-
-var discardWriteFlusher writeFlusher = nopFlusher{ioutil.Discard}
-
-func newWriteFlusher(w io.Writer) writeFlusher {
-	// discard writer does not need flushing
-	if w == ioutil.Discard {
-		return discardWriteFlusher
-	}
-
-	if wf, is := w.(writeFlusher); is {
-		return wf
-	}
-
-	// in memory buffers, as implemented by types like bytes.Buffer and
-	// strings.Builder, do not need to be flushed
-	type buffer interface {
-		io.Writer
-		Cap() int
-		Len() int
-		Grow(n int)
-		Reset()
-	}
-	if _, isBuffer := w.(buffer); isBuffer {
-		return nopFlusher{w}
-	}
-
-	return bufio.NewWriter(w)
-}
-
-type nopFlusher struct{ io.Writer }
-
-func (nf nopFlusher) Flush() error { return nil }
-
-type writeFlushers []writeFlusher
-
-func (wfs writeFlushers) Write(p []byte) (n int, err error) {
-	for _, wf := range wfs {
-		n, err = wf.Write(p)
-		if err != nil {
-			return n, err
-		}
-		if n != len(p) {
-			return n, io.ErrShortWrite
-		}
-	}
-	return len(p), nil
-}
-
-func (wfs writeFlushers) Flush() (err error) {
-	for _, wf := range wfs {
-		if ferr := wf.Flush(); err == nil {
-			err = ferr
-		}
-	}
-	return err
-}
-
-func appendWriteFlusher(all writeFlushers, some ...writeFlusher) writeFlushers {
-	for _, one := range some {
-		if many, ok := one.(writeFlushers); ok {
-			all = append(all, many...)
-		} else if one != nil {
-			all = append(all, one)
-		}
-	}
-	return all
-}
-
-func multiWriteFlusher(a, b writeFlusher) writeFlusher {
-	switch wfs := appendWriteFlusher(nil, a, b); len(wfs) {
-	case 0:
-		return nil
-	case 1:
-		return wfs[0]
-	default:
-		return wfs
-	}
 }
 
 type named interface {

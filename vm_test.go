@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/jcorbin/gothird/internal/flushio"
 	"github.com/jcorbin/gothird/internal/logio"
 	"github.com/jcorbin/gothird/internal/panicerr"
 )
@@ -466,7 +467,7 @@ func (vmt *vmTestCase) buildVM(t *testing.T) *VM {
 		vm.in = strings.NewReader("")
 	}
 	if vm.out == nil {
-		vm.out = newWriteFlusher(ioutil.Discard)
+		vm.out = flushio.NewWriteFlusher(ioutil.Discard)
 	}
 
 	return &vm
