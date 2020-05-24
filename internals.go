@@ -437,11 +437,11 @@ func (vm *VM) run(ctx context.Context) error {
 
 func (vm *VM) scan() (token string) {
 	defer func() {
-		line := vm.scanLine
+		line := vm.Scan
 		if line.Len() == 0 {
-			line = vm.lastLine
+			line = vm.Last
 		}
-		vm.logf(">", "scan %v %q <- %q", line.inLoc, token, line.Buffer.String())
+		vm.logf(">", "scan %v %q <- %q", line.Location, token, line.Buffer.String())
 	}()
 
 	if err := vm.out.Flush(); err != nil {
@@ -450,7 +450,7 @@ func (vm *VM) scan() (token string) {
 
 	var sb strings.Builder
 	for {
-		if r, err := vm.ioCore.readRune(); err != nil {
+		if r, _, err := vm.ioCore.ReadRune(); err != nil {
 			vm.halt(err)
 		} else if !unicode.IsControl(r) && !unicode.IsSpace(r) {
 			sb.WriteRune(r)
@@ -458,7 +458,7 @@ func (vm *VM) scan() (token string) {
 		}
 	}
 	for {
-		r, err := vm.ioCore.readRune()
+		r, _, err := vm.ioCore.ReadRune()
 		if err == io.EOF {
 			break
 		} else if err != nil {
@@ -483,12 +483,12 @@ func (vm *VM) readRune() rune {
 		vm.halt(err)
 	}
 
-	r, err := vm.ioCore.readRune()
+	r, _, err := vm.ioCore.ReadRune()
 	for r == 0 {
 		if err != nil {
 			vm.halt(err)
 		}
-		r, err = vm.ioCore.readRune()
+		r, _, err = vm.ioCore.ReadRune()
 	}
 	return r
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"io/ioutil"
 
@@ -75,8 +76,15 @@ func withInputWriter(wto io.WriterTo) pipeInput {
 	return pipeInput{r, nameOf(wto)}
 }
 
+func nameOf(obj interface{}) string {
+	if nom, ok := obj.(interface{ Name() string }); ok {
+		return nom.Name()
+	}
+	return fmt.Sprintf("<unnamed %T>", obj)
+}
+
 func (i inputOption) apply(vm *VM) {
-	vm.inQueue = append(vm.inQueue, i.Reader)
+	vm.Queue = append(vm.Queue, i.Reader)
 }
 
 func (o outputOption) apply(vm *VM) {
@@ -124,6 +132,6 @@ type pipeInput struct {
 func (pi pipeInput) Name() string { return pi.name }
 
 func (pi pipeInput) apply(vm *VM) {
-	vm.inQueue = append(vm.inQueue, pi)
+	vm.Queue = append(vm.Queue, pi)
 	vm.closers = append(vm.closers, pi)
 }

@@ -463,9 +463,6 @@ func (vmt *vmTestCase) buildVM(t *testing.T) *VM {
 	}
 	opt.apply(&vm)
 
-	if vm.in == nil {
-		vm.in = strings.NewReader("")
-	}
 	if vm.out == nil {
 		vm.out = flushio.NewWriteFlusher(ioutil.Discard)
 	}

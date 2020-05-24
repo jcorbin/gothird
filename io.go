@@ -9,82 +9,15 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/jcorbin/gothird/internal/fileinput"
 	"github.com/jcorbin/gothird/internal/flushio"
 	"github.com/jcorbin/gothird/internal/panicerr"
-	"github.com/jcorbin/gothird/internal/runeio"
 )
 
-type inLoc struct {
-	fileName string
-	number   int
-}
-
-type inLine struct {
-	inLoc
-	bytes.Buffer
-}
-
-func (loc inLoc) String() string { return fmt.Sprintf("%v:%v", loc.fileName, loc.number) }
-func (il inLine) String() string { return fmt.Sprintf("%v %q", il.inLoc, il.Buffer.String()) }
-
 type ioCore struct {
-	in      io.RuneReader
-	inQueue []io.Reader
-
-	lastLine inLine
-	scanLine inLine
-
-	out flushio.WriteFlusher
-
+	fileinput.Input
+	out     flushio.WriteFlusher
 	closers []io.Closer
-}
-
-func (ioc *ioCore) readRune() (rune, error) {
-	if ioc.in == nil && !ioc.nextIn() {
-		return 0, io.EOF
-	}
-
-	r, _, err := ioc.in.ReadRune()
-	if r == '\n' {
-		ioc.nextLine()
-	} else {
-		ioc.scanLine.WriteRune(r)
-	}
-
-	if r != 0 {
-		return r, nil
-	}
-	if err == io.EOF && ioc.nextIn() {
-		err = nil
-	}
-	return 0, err
-}
-
-func (ioc *ioCore) nextLine() {
-	ioc.lastLine.Reset()
-	ioc.lastLine.fileName = ioc.scanLine.fileName
-	ioc.lastLine.number = ioc.scanLine.number
-	ioc.lastLine.Write(ioc.scanLine.Bytes())
-	ioc.scanLine.Reset()
-	ioc.scanLine.number++
-}
-
-func (ioc *ioCore) nextIn() bool {
-	ioc.nextLine()
-	if ioc.in != nil {
-		if cl, ok := ioc.in.(io.Closer); ok {
-			cl.Close()
-		}
-		ioc.in = nil
-	}
-	if len(ioc.inQueue) > 0 {
-		r := ioc.inQueue[0]
-		ioc.inQueue = ioc.inQueue[1:]
-		ioc.in = runeio.NewReader(r)
-		ioc.scanLine.fileName = nameOf(r)
-		ioc.scanLine.number = 1
-	}
-	return ioc.in != nil
 }
 
 func (ioc *ioCore) Close() (err error) {
@@ -94,17 +27,6 @@ func (ioc *ioCore) Close() (err error) {
 		}
 	}
 	return err
-}
-
-type named interface {
-	Name() string
-}
-
-func nameOf(obj interface{}) string {
-	if nom, ok := obj.(named); ok {
-		return nom.Name()
-	}
-	return fmt.Sprintf("<unnamed %T>", obj)
 }
 
 func runMarkScanner(name string, out io.WriteCloser, sc scanner) io.WriteCloser {
