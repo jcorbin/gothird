@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/jcorbin/gothird/internal/panicerr"
+	"github.com/jcorbin/gothird/internal/runeio"
 )
 
 type inLoc struct {
@@ -79,7 +80,7 @@ func (ioc *ioCore) nextIn() bool {
 	if len(ioc.inQueue) > 0 {
 		r := ioc.inQueue[0]
 		ioc.inQueue = ioc.inQueue[1:]
-		ioc.in = newRuneReader(r)
+		ioc.in = runeio.NewReader(r)
 		ioc.scanLine.fileName = nameOf(r)
 		ioc.scanLine.number = 1
 	}
@@ -133,34 +134,6 @@ func writeRune(w io.Writer, r rune) (err error) {
 	}
 	return err
 }
-
-func newRuneReader(r io.Reader) io.RuneReader {
-	switch impl := r.(type) {
-	case io.RuneReader:
-		return impl
-	case readerName:
-		br := bufio.NewReader(impl.Reader)
-		return runeReaderName{br, br, impl.name}
-	case named:
-		return runeReaderName{r, bufio.NewReader(r), impl.Name()}
-	default:
-		return bufio.NewReader(r)
-	}
-}
-
-type readerName struct {
-	io.Reader
-	name string
-}
-
-type runeReaderName struct {
-	io.Reader
-	io.RuneReader
-	name string
-}
-
-func (nr readerName) Name() string     { return nr.name }
-func (nr runeReaderName) Name() string { return nr.name }
 
 type writeFlusher interface {
 	io.Writer

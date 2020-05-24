@@ -37,10 +37,3 @@ func WithMemLimit(limit uint) VMOption            { return withMemLimit(limit) }
 func WithMemLayout(retBase, memBase int) VMOption { return withMemLayout(retBase, memBase) }
 
 func WithLogf(logfn func(mess string, args ...interface{})) VMOption { return withLogfn(logfn) }
-
-func NamedReader(name string, r io.Reader) io.Reader {
-	if rr, is := r.(io.RuneReader); is {
-		return runeReaderName{r, rr, name}
-	}
-	return readerName{r, name}
-}

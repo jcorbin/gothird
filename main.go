@@ -28,7 +28,8 @@ func main() {
 	log.SetOutput(os.Stderr)
 	defer os.Exit(log.ExitCode())
 
-	var in bytes.Buffer
+	var in namedBuffer
+	in.name = "<pre-stdin>"
 	if trace {
 		in.WriteString("\ntron\n")
 	}
@@ -38,7 +39,7 @@ func main() {
 		WithLogf(log.Leveledf("TRACE")),
 		WithMemLimit(memLimit),
 		WithInputWriter(thirdKernel),
-		WithInput(NamedReader("<pre-stdin>", &in)),
+		WithInput(&in),
 		WithInput(os.Stdin),
 		WithOutput(os.Stdout),
 	)
@@ -119,3 +120,10 @@ func commonPrefix(a, b string) string {
 	}
 	return a
 }
+
+type namedBuffer struct {
+	bytes.Buffer
+	name string
+}
+
+func (nb namedBuffer) Name() string { return nb.name }

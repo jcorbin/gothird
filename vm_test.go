@@ -191,17 +191,24 @@ func (vmt vmTestCase) withInput(input string) vmTestCase {
 			name += "_" + strconv.Itoa(id+1)
 		}
 		vmt.nextInputID++
-		return WithInput(NamedReader(name, strings.NewReader(input)))
+		return WithInput(namedString{name, strings.NewReader(input)})
 	})
 	return vmt
 }
 
 func (vmt vmTestCase) withNamedInput(name string, input string) vmTestCase {
 	vmt.opts = append(vmt.opts, func(vmt *vmTestCase, t *testing.T) VMOption {
-		return WithInput(NamedReader(name, strings.NewReader(input)))
+		return WithInput(namedString{name, strings.NewReader(input)})
 	})
 	return vmt
 }
+
+type namedString struct {
+	name string
+	*strings.Reader
+}
+
+func (ns namedString) Name() string { return ns.name }
 
 func (vmt vmTestCase) withInputWriter(w io.WriterTo) vmTestCase {
 	vmt.opts = append(vmt.opts, WithInputWriter(w))
