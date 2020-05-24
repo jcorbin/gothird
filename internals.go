@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/jcorbin/gothird/internal/runeio"
 )
 
 func (vm *VM) halt(err error) {
@@ -471,7 +473,7 @@ func (vm *VM) scan() (token string) {
 }
 
 func (vm *VM) writeRune(r rune) {
-	if err := writeRune(vm.out, r); err != nil {
+	if _, err := runeio.WriteANSIRune(vm.out, r); err != nil {
 		vm.halt(err)
 	}
 }

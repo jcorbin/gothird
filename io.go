@@ -96,45 +96,6 @@ func (ioc *ioCore) Close() (err error) {
 	return err
 }
 
-var c17bit [32]string
-
-func init() {
-	for i, ctl := range c1Ctls {
-		c17bit[i] = "\x1b" + string(ctl.r^0xc0)
-	}
-}
-
-func writeRune(w io.Writer, r rune) (err error) {
-	type runeWriter interface {
-		WriteRune(r rune) (size int, err error)
-	}
-	if r < 0x80 {
-		if bw, ok := w.(io.ByteWriter); ok {
-			err = bw.WriteByte(byte(r))
-		} else {
-			_, err = w.Write([]byte{byte(r)})
-		}
-	} else if r <= 0x9f {
-		esc := c17bit[r^0x80]
-		if sw, ok := w.(io.StringWriter); ok {
-			_, err = sw.WriteString(esc)
-		} else if bw, ok := w.(io.ByteWriter); ok {
-			if err = bw.WriteByte(esc[0]); err == nil {
-				err = bw.WriteByte(esc[1])
-			}
-		} else {
-			_, err = w.Write([]byte{esc[0], esc[1]})
-		}
-	} else if rw, ok := w.(runeWriter); ok {
-		_, err = rw.WriteRune(r)
-	} else if sw, ok := w.(io.StringWriter); ok {
-		_, err = sw.WriteString(string(r))
-	} else {
-		_, err = w.Write([]byte(string(r)))
-	}
-	return err
-}
-
 type writeFlusher interface {
 	io.Writer
 	Flush() error
