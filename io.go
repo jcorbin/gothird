@@ -821,39 +821,3 @@ func (dump *vmDumper) nextWord() uint {
 	}
 	return dump.word()
 }
-
-type logWriter struct {
-	logf func(string, ...interface{})
-
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (lw *logWriter) Write(p []byte) (n int, err error) {
-	lw.mu.Lock()
-	defer lw.mu.Unlock()
-	lw.buf.Write(p)
-	lw.flushLines()
-	return len(p), nil
-}
-
-func (lw *logWriter) Close() error {
-	lw.mu.Lock()
-	defer lw.mu.Unlock()
-	lw.flushLines()
-	if n := lw.buf.Len(); n > 0 {
-		lw.logf("%s", lw.buf.Next(n))
-	}
-	return nil
-}
-
-func (lw *logWriter) flushLines() {
-	for {
-		i := bytes.IndexByte(lw.buf.Bytes(), '\n')
-		if i < 0 {
-			break
-		}
-		lw.logf("%s", lw.buf.Next(i))
-		lw.buf.Next(1)
-	}
-}

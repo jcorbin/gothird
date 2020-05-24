@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/jcorbin/gothird/internal/logio"
 )
 
 type vmTestCases []vmTestCase
@@ -331,7 +333,7 @@ func (vmt vmTestCase) withTestDump() vmTestCase {
 
 func (vmt vmTestCase) withTestOutput() vmTestCase {
 	vmt.opts = append(vmt.opts, func(vmt *vmTestCase, t *testing.T) VMOption {
-		lw := &logWriter{logf: func(mess string, args ...interface{}) {
+		lw := &logio.Writer{Logf: func(mess string, args ...interface{}) {
 			t.Logf("out: "+mess, args...)
 		}}
 		return WithTee(lw)
@@ -341,7 +343,7 @@ func (vmt vmTestCase) withTestOutput() vmTestCase {
 
 func (vmt vmTestCase) withTestHexOutput() vmTestCase {
 	vmt.opts = append(vmt.opts, func(vmt *vmTestCase, t *testing.T) VMOption {
-		lw := &logWriter{logf: func(mess string, args ...interface{}) {
+		lw := &logio.Writer{Logf: func(mess string, args ...interface{}) {
 			t.Logf("out: "+mess, args...)
 		}}
 		enc := hex.Dumper(lw)
@@ -463,7 +465,7 @@ func (vmt *vmTestCase) buildVM(t *testing.T) *VM {
 }
 
 func (vmt vmTestCase) dumpToTest(t *testing.T, vm *VM) {
-	lw := logWriter{logf: t.Logf}
+	lw := logio.Writer{Logf: t.Logf}
 	defer lw.Close()
 	vmDumper{vm: vm, out: &lw}.dump()
 }

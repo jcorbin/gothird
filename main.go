@@ -7,6 +7,8 @@ import (
 	"os"
 	"regexp"
 	"time"
+
+	"github.com/jcorbin/gothird/internal/logio"
 )
 
 func main() {
@@ -41,7 +43,7 @@ func main() {
 	)
 
 	if dump {
-		lw := &logWriter{logf: log.Leveledf("DUMP")}
+		lw := &logio.Writer{Logf: log.Leveledf("DUMP")}
 		defer lw.Close()
 		defer vmDumper{vm: vm, out: lw}.dump()
 	}

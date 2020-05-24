@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/jcorbin/gothird/internal/logio"
 )
 
 func Test_memCore(t *testing.T) {
@@ -157,7 +159,7 @@ func Test_memCore(t *testing.T) {
 		),
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tcLogOut := &logWriter{logf: t.Logf}
+			tcLogOut := &logio.Writer{Logf: t.Logf}
 			log.SetOutput(tcLogOut)
 			defer log.SetOutput(os.Stderr)
 
@@ -171,7 +173,7 @@ func Test_memCore(t *testing.T) {
 
 			for _, step := range tc.steps {
 				if !t.Run(step.name, func(t *testing.T) {
-					stepLogOut := &logWriter{logf: t.Logf}
+					stepLogOut := &logio.Writer{Logf: t.Logf}
 					log.SetOutput(stepLogOut)
 					defer log.SetOutput(tcLogOut)
 
