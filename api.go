@@ -26,9 +26,9 @@ func (vm *VM) Run(ctx context.Context) error {
 	if err == nil || errors.Is(err, io.EOF) {
 		return nil
 	}
-	var vmErr vmHaltError
-	if errors.As(err, &vmErr) {
-		err = vmErr.error
+	var he haltError
+	if errors.As(err, &he) {
+		err = he.error
 	}
 	return err
 }

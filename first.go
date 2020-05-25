@@ -22,8 +22,7 @@ import (
 // wishes to do random memory accesses, they come out of main memory--it cannot
 // access the stack or string storage.
 type VM struct {
-	ioCore
-	logging
+	Core
 
 	prog uint // program counter
 	last uint // last word
@@ -669,7 +668,7 @@ func (vm *VM) scan() (token string) {
 
 	var sb strings.Builder
 	for {
-		if r, _, err := vm.ioCore.ReadRune(); err != nil {
+		if r, _, err := vm.Core.ReadRune(); err != nil {
 			vm.halt(err)
 		} else if !unicode.IsControl(r) && !unicode.IsSpace(r) {
 			sb.WriteRune(r)
@@ -677,7 +676,7 @@ func (vm *VM) scan() (token string) {
 		}
 	}
 	for {
-		r, _, err := vm.ioCore.ReadRune()
+		r, _, err := vm.Core.ReadRune()
 		if err == io.EOF {
 			break
 		} else if err != nil {
@@ -711,54 +710,3 @@ func boolInt(b bool) int {
 	}
 	return 0
 }
-
-func (vm *VM) halt(err error) {
-	// ignore any panics while trying to flush output
-	func() {
-		defer func() { recover() }()
-		if vm.out != nil {
-			if ferr := vm.out.Flush(); err == nil {
-				err = ferr
-			}
-		}
-	}()
-
-	// ignore any panics while logging
-	func() {
-		defer func() { recover() }()
-		vm.logf("#", "halt error: %v", err)
-	}()
-
-	panic(vmHaltError{err})
-}
-
-func (vm *VM) writeRune(r rune) {
-	if _, err := runeio.WriteANSIRune(vm.out, r); err != nil {
-		vm.halt(err)
-	}
-}
-
-func (vm *VM) readRune() rune {
-	if err := vm.out.Flush(); err != nil {
-		vm.halt(err)
-	}
-
-	r, _, err := vm.ioCore.ReadRune()
-	for r == 0 {
-		if err != nil {
-			vm.halt(err)
-		}
-		r, _, err = vm.ioCore.ReadRune()
-	}
-	return r
-}
-
-type vmHaltError struct{ error }
-
-func (err vmHaltError) Error() string {
-	if err.error != nil {
-		return fmt.Sprintf("VM halted: %v", err.error)
-	}
-	return "VM halted"
-}
-func (err vmHaltError) Unwrap() error { return err.error }

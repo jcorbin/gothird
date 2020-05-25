@@ -390,14 +390,14 @@ func (vmt vmTestCase) run(t *testing.T) {
 		}
 	}()
 
-	var halted vmHaltError
+	var h haltError
 	if err := func() error {
 		defer runTimer.Start().Stop()
 		return vmt.runVM(ctx, vm)
 	}(); vmt.wantErr != nil {
 		assert.True(t, errors.Is(err, vmt.wantErr), "expected error: %v\ngot: %+v", vmt.wantErr, err)
-	} else if errors.As(err, &halted) {
-		assert.NoError(t, halted.error, "unexpected abnormal VM halt")
+	} else if errors.As(err, &h) {
+		assert.NoError(t, h.error, "unexpected abnormal VM halt")
 	} else {
 		assert.NoError(t, err, "unexpected VM run error")
 	}
